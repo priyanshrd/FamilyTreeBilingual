@@ -40,7 +40,12 @@ sudo -u postgres /usr/lib/postgresql/16/bin/pg_ctl -D /tmp/pgtest -o "-p 54329 -
 
 ### 1. Apply migrations
 
-From a machine that can reach Supabase:
+**Easiest:** open [`supabase/dist/all-migrations.sql`](supabase/dist/all-migrations.sql), copy all of it,
+and paste it into Dashboard → **SQL Editor → New query → Run**. It runs as one transaction and
+records each migration, so the CLI won't re-apply them later. Run it once on an empty project.
+(Regenerate it after changing migrations: `scripts/bundle-migrations.sh`.)
+
+**Or with the CLI**, from a machine that can reach Supabase:
 
 ```bash
 npx supabase login                                   # opens a browser, or set SUPABASE_ACCESS_TOKEN

@@ -18,13 +18,37 @@ create table public.audit_log (
 create index audit_log_family_at_idx on public.audit_log (family_id, at desc);
 create index audit_log_row_idx on public.audit_log (table_name, row_key);
 
+-- Decodes %XX escapes (UTF-8). Browsers only allow ASCII in headers, so the client URI-encodes.
+create function private.url_decode(val text) returns text
+language plpgsql immutable as $$
+declare
+  bytes bytea := '';
+  i int := 1;
+  ch text;
+begin
+  while i <= length(val) loop
+    ch := substr(val, i, 1);
+    if ch = '%' and substr(val, i + 1, 2) ~ '^[0-9A-Fa-f]{2}$' then
+      bytes := bytes || decode(substr(val, i + 1, 2), 'hex');
+      i := i + 3;
+    else
+      bytes := bytes || convert_to(ch, 'UTF8');
+      i := i + 1;
+    end if;
+  end loop;
+  return convert_from(bytes, 'UTF8');
+exception when others then
+  return val;
+end;
+$$;
+
 create function private.request_editor_label() returns text
 language plpgsql stable as $$
 declare
   label text;
 begin
-  label := nullif(btrim(current_setting('request.headers', true)::json ->> 'x-editor-name'), '');
-  return left(label, 80);
+  label := private.url_decode(current_setting('request.headers', true)::json ->> 'x-editor-name');
+  return left(nullif(btrim(label), ''), 80);
 exception when others then
   return null;
 end;

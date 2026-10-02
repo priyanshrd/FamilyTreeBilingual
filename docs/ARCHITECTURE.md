@@ -1,6 +1,6 @@
 # Family Tree — Architecture
 
-Status: **Phases 0–2 implemented** (scaffold, database, domain core). See §0 for decisions made after review.
+Status: **Phases 0–3 implemented** (scaffold, database, domain core, login & families). See §0 for decisions made after review.
 
 ---
 
@@ -541,7 +541,7 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 | **0. Scaffold** ✅ | Vite + React + TS + Tailwind + ESLint/Prettier + Vitest + pnpm; `supabase init`; folder skeleton; README with local setup | `pnpm build`, `pnpm test`, `pnpm lint` green |
 | **1. Database** ✅ | Migrations: enums, tables, FKs, indexes, constraints, integrity triggers, RLS, storage bucket + policies, audit trigger, kinship dictionary, RPCs; DB tests | `pnpm test:db` green (77 tests); still to do: apply to the hosted project and generate TS types |
 | **2. Domain core** ✅ | `dates` (parse/format en+mr, compare), `genealogy` graph (derived siblings/step/ancestors), `kinship` resolver (path key + English id) with default en/mr terms and dictionary lookup, `localized` overwrite rule, `dedupe`, `validation` warnings | `pnpm test` green (128 tests) |
-| **3. Auth & families** | Password-only login to the shared account, sign out, create/select family, device "editor name" and "this is me" | Real sign-in against Supabase; RLS verified from the UI |
+| **3. Auth & families** ✅ | Password-only login to the shared account, sign out, family list + create (bilingual name), family page, device editor name (sent as `x-editor-name`, URI-encoded), UI language toggle (Marathi default) | Browser smoke test with mocked Supabase passes; real sign-in pending migrations on the hosted project |
 | **4. People & relationships** | Person drawer, bilingual person form (manual entry), add-relative flows, connect existing, duplicate warning, search, edit, soft delete with impact dialog, trash/restore | All flows persist via RPCs; no fake state |
 | **5. Tree view** | Projection, dagre union-graph layout, Person/Union nodes, lineage edge styles, focus/zoom/pan, expand/collapse, ancestors/descendants modes | 3-generation focus view of a 200-person seed family is smooth |
 | **6. Language service** | Edge Function + provider interface + first providers; Generate Marathi/English buttons; source badges; staleness hint | Overwrite rule tested; provider swappable via env |

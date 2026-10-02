@@ -213,6 +213,9 @@ describe('audit log', () => {
   it('records who changed what, with the device editor name', async () => {
     const p = await newPerson('Audited');
     await asOwner((c) => c.query(`update persons set gender = 'male' where id = $1`, [p]), { 'x-editor-name': 'Priyansh' });
+    await asOwner((c) => c.query(`update persons set is_living = true where id = $1`, [p]), {
+      'x-editor-name': encodeURIComponent('प्रियांश'),
+    });
     await asOwner((c) => c.query('select public.soft_delete_person($1)', [p]));
     await asOwner((c) => c.query('select public.restore_person($1)', [p]));
 
@@ -225,7 +228,8 @@ describe('audit log', () => {
         )
       ).rows,
     );
-    expect(rows.map((r) => r.action)).toEqual(['insert', 'update', 'soft_delete', 'restore']);
+    expect(rows.map((r) => r.action)).toEqual(['insert', 'update', 'update', 'soft_delete', 'restore']);
+    expect(rows[2].actor_label).toBe('प्रियांश');
     expect(rows[1]).toMatchObject({
       actor_id: owner,
       actor_label: 'Priyansh',
