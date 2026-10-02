@@ -60,6 +60,14 @@ The app has no per-person accounts. Everyone signs in to one shared account with
 
 Even if another account were created, membership-based RLS would give it access to nothing.
 
+### 3. Hosting on Vercel
+
+Import the GitHub repo in Vercel. `vercel.json` already sets the framework (Vite), the pnpm
+build, SPA routing (all paths serve `index.html`) and long-term caching for hashed assets.
+In **Project → Settings → Environment Variables**, add `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_FAMILY_LOGIN_EMAIL`. Then, in Supabase
+**Authentication → URL Configuration**, set the Site URL to the Vercel domain.
+
 ### Keys
 
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` are public by design and ship in the

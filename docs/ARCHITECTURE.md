@@ -1,6 +1,6 @@
 # Family Tree — Architecture
 
-Status: **Phase 0 (scaffold) and Phase 1 (database) implemented.** See §0 for decisions made after review.
+Status: **Phases 0–2 implemented** (scaffold, database, domain core). See §0 for decisions made after review.
 
 ---
 
@@ -13,6 +13,7 @@ Status: **Phase 0 (scaffold) and Phase 1 (database) implemented.** See §0 for d
 | "Who changed this?" | Because everyone shares one account, each device can set an optional editor name. It is sent as the `x-editor-name` header and recorded in `audit_log.actor_label`. |
 | "How am I related to X?" | "Me" is chosen **per device** (stored in the browser), not tied to an account. The finder can always take any two people. |
 | Marathi (and English) relationship terms | An **editable dictionary inside the site**. Built-in defaults ship in code, and per-family overrides and additions live in `kinship_terms`. Lookup order: family override → built-in default → composed description. |
+| Hosting | **Vercel** (static Vite build, SPA rewrites in `vercel.json`, env vars set in the Vercel dashboard). Language-provider calls go through Supabase Edge Functions so API keys never reach the browser. |
 | Supabase project | `hbpguqvcyebidnvjvxzy`. Migrations are written and tested locally. Applying them to the hosted project needs network access and credentials (see README). |
 
 ---
@@ -539,7 +540,7 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 |---|---|---|
 | **0. Scaffold** ✅ | Vite + React + TS + Tailwind + ESLint/Prettier + Vitest + pnpm; `supabase init`; folder skeleton; README with local setup | `pnpm build`, `pnpm test`, `pnpm lint` green |
 | **1. Database** ✅ | Migrations: enums, tables, FKs, indexes, constraints, integrity triggers, RLS, storage bucket + policies, audit trigger, kinship dictionary, RPCs; DB tests | `pnpm test:db` green (77 tests); still to do: apply to the hosted project and generate TS types |
-| **2. Domain core** | `dates`, `genealogy`, `kinship` resolver + en/mr terms, `validation`, `dedupe`, `localized` with the full test matrix in §4.9 | Vitest green; resolver covers all listed cases |
+| **2. Domain core** ✅ | `dates` (parse/format en+mr, compare), `genealogy` graph (derived siblings/step/ancestors), `kinship` resolver (path key + English id) with default en/mr terms and dictionary lookup, `localized` overwrite rule, `dedupe`, `validation` warnings | `pnpm test` green (128 tests) |
 | **3. Auth & families** | Password-only login to the shared account, sign out, create/select family, device "editor name" and "this is me" | Real sign-in against Supabase; RLS verified from the UI |
 | **4. People & relationships** | Person drawer, bilingual person form (manual entry), add-relative flows, connect existing, duplicate warning, search, edit, soft delete with impact dialog, trash/restore | All flows persist via RPCs; no fake state |
 | **5. Tree view** | Projection, dagre union-graph layout, Person/Union nodes, lineage edge styles, focus/zoom/pan, expand/collapse, ancestors/descendants modes | 3-generation focus view of a 200-person seed family is smooth |
@@ -558,4 +559,3 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 2. **Shared login account.** Create it once in the Supabase dashboard (README → "Shared family login").
 3. **Language providers** (Phase 6): Bhashini / IndicXlit access and/or an Anthropic API key.
 4. **Marathi kinship terms**: the defaults in §4.9 are a starting point and can be edited in the app.
-5. **Hosting** for the static SPA (Vercel / Netlify / Cloudflare Pages): not blocking.
