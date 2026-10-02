@@ -1,6 +1,19 @@
-# Family Tree — Architecture Proposal (v0, for review)
+# Family Tree — Architecture
 
-Status: **proposal — nothing implemented yet.** Review, comment, and approve before Phase 0 starts.
+Status: **Phase 0 (scaffold) and Phase 1 (database) implemented.** See §0 for decisions made after review.
+
+---
+
+## 0. Decisions after review
+
+| Topic | Decision |
+|---|---|
+| Relationship keys | The canonical key is the **kinship path** (`M.B` = mother's brother). Each path also gets a readable **English identifier** (`maternal_uncle`). Both are **calculated** by the relationship engine when the relationship finder runs. Derived relationships are never stored. |
+| Login | **No per-person user accounts or user screens.** The family shares **one Supabase Auth account**. The login screen asks only for a **password**; the account email is fixed in config (`VITE_FAMILY_LOGIN_EMAIL`). Public sign-up is disabled. Membership-based RLS stays in place, so any other account sees nothing, and per-person accounts can be added later without schema changes. |
+| "Who changed this?" | Because everyone shares one account, each device can set an optional editor name. It is sent as the `x-editor-name` header and recorded in `audit_log.actor_label`. |
+| "How am I related to X?" | "Me" is chosen **per device** (stored in the browser), not tied to an account. The finder can always take any two people. |
+| Marathi (and English) relationship terms | An **editable dictionary inside the site**. Built-in defaults ship in code, and per-family overrides and additions live in `kinship_terms`. Lookup order: family override → built-in default → composed description. |
+| Supabase project | `hbpguqvcyebidnvjvxzy`. Migrations are written and tested locally. Applying them to the hosted project needs network access and credentials (see README). |
 
 ---
 
@@ -35,7 +48,7 @@ Status: **proposal — nothing implemented yet.** Review, comment, and approve b
 | Graph view | `@xyflow/react` (React Flow v12) | Per spec. |
 | Layout (MVP) | `@dagrejs/dagre` on a **union graph**, behind a `LayoutEngine` interface | Small, layered (generation-aware). Spouse adjacency fixed up post-layout. Replaceable by a custom family layout / ELK in a later phase without touching callers. |
 | Validation | zod | Form + RPC payload validation, shared types. |
-| Tests | Vitest (domain), pgTAP via `supabase test db` (schema/RLS) | Relationship engine is pure TS → fast unit tests. |
+| Tests | Vitest for domain logic (`pnpm test`) and for schema/RLS against a disposable local Postgres (`pnpm test:db`) | Relationship engine is pure TS → fast unit tests. Supabase Docker images are unavailable in the dev environment, so DB tests use plain Postgres + a small Supabase shim. |
 | UI strings i18n | Small typed dictionary (`en.ts`, `mr.ts`) + `Intl.PluralRules` | Avoids an i18n framework until needed. |
 | Backend | Supabase: Postgres, Auth, Storage, RLS, Edge Functions (translation), Realtime (later) | Per spec. No other DB. |
 
@@ -115,12 +128,7 @@ Why `jsonb` here and a table for names: these fields are display-only, never joi
 | script | text | ISO 15924: `Latn`, `Deva` |
 | enabled | bool | add `hi`, `gu`, `kn`… later with no schema change |
 
-#### `profiles`
-| column | type | notes |
-|---|---|---|
-| id | uuid PK → `auth.users.id` | created by trigger on sign-up |
-| display_name | text | for audit ("Priyansh changed…") |
-| ui_language | text → languages | |
+(The proposed `profiles` table was dropped: with one shared login there is no per-user profile. The editor name lives on the device.)
 
 #### `families`
 | column | type | notes |
@@ -137,12 +145,10 @@ Why `jsonb` here and a table for names: these fields are display-only, never joi
 |---|---|---|
 | family_id | uuid → families | PK part |
 | user_id | uuid → auth.users | PK part |
-| role | family_role | |
-| person_id | uuid null | **"this is me"**. Composite FK to `persons(family_id,id)`. Drives "How am I related to X?" |
-| invited_by | uuid null | |
-| created_at | timestamptz | |
+| role | family_role | the shared login is `owner` of the families it creates |
+| created_at, created_by | | |
 
-Trigger: a family must always keep ≥1 owner. `family_invitations (id, family_id, email, role, token_hash, expires_at, accepted_at)` is added in the collaboration phase; the table shape already supports it.
+Trigger: a family must always keep ≥1 owner. There is no membership UI and no API write access; rows are created by `create_family()`. `family_invitations (id, family_id, email, role, token_hash, expires_at, accepted_at)` is added in the collaboration phase; the table shape already supports it.
 
 #### `persons`
 | column | type | notes |
@@ -152,12 +158,11 @@ Trigger: a family must always keep ≥1 owner. `family_invitations (id, family_i
 | gender | gender | default `unknown` |
 | is_living | bool null | null = unknown; used for privacy later |
 | is_placeholder | bool default false | "Unknown parent" stand-in (see §4.6); excluded from search/duplicates |
-| profile_media_id | uuid null → media | |
 | notes | jsonb localized null | |
 | privacy | text default `'family'` | reserved for future public sharing; living people never auto-public |
 | created_* / updated_* / deleted_* | | |
 
-Birth, death, birthplace, occupation and residence are **facts**, not columns (§3.4 `person_facts`). A view `person_summary` flattens primary names + birth/death for list/graph queries.
+Birth, death, birthplace, occupation and residence are **facts**, not columns (§3.4 `person_facts`). The profile photo is a `media_links` row with `role = 'profile'` (at most one per person).
 
 #### `person_names` + `person_name_forms`
 A person can have several names (birth name, married name; common for Marathi women who historically took a new given name and surname at marriage). Each name has one *form* per language.
@@ -257,25 +262,39 @@ Same shape as `person_facts`, but with `union_id` and `union_fact_type` (marriag
 | id | uuid PK | |
 | family_id | uuid | |
 | kind | media_kind | |
-| storage_path | text unique | `{family_id}/people/{person_id}/{media_id}.jpg` |
-| mime_type, size_bytes, width, height | | validated |
+| storage_path, thumb_path | text | must start with `{family_id}/` (CHECK), e.g. `{family_id}/people/{person_id}/{media_id}.jpg` |
+| mime_type, size_bytes, width, height | | validated: jpeg/png/webp/pdf, ≤ 15 MB |
 | title, description | jsonb localized null | |
 | date_* | fuzzy | when taken |
 | uploaded_by, created_at, deleted_* | | |
 
-`media_links (media_id, family_id, person_id null, union_id null, fact_id null, role text ('profile','tagged','attachment'), crop jsonb)` with exactly one target non-null (CHECK).
+`media_links (media_id, family_id, person_id null, union_id null, role text ('profile','tagged','attachment'), crop jsonb)` with exactly one target non-null (CHECK), and at most one `profile` link per person.
 
 #### `audit_log` (append-only, from day one)
 | column | type | notes |
 |---|---|---|
 | id | bigint identity | |
 | family_id | uuid | |
-| table_name, row_id, action | | `insert/update/delete/soft_delete/restore` |
+| table_name, row_key, action | | `row_key` is the primary key as jsonb; action is `insert/update/delete/soft_delete/restore` |
 | actor_id | uuid | `auth.uid()` |
+| actor_label | text null | device editor name from the `x-editor-name` header |
 | at | timestamptz | |
 | old_values, new_values | jsonb | changed columns only |
 
 A generic `AFTER` trigger on all family tables populates it. Members can select; **no one** can insert, update or delete through the API. This trigger is cheap to add now; adding it later would mean losing the history of everything entered in between. The history UI comes post-MVP.
+
+#### `kinship_terms` (editable relationship dictionary)
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| family_id | uuid | |
+| term_key | text | kinship path, e.g. `M.B`, `F.eB`, `Sp.F` |
+| lang | text → languages | `mr`, `en`, … |
+| label | text | e.g. `मामा` |
+| notes | text null | e.g. regional usage |
+| created_* / updated_* / deleted_* | | partial unique `(family_id, term_key, lang)` among live rows |
+
+Defaults live in code. "Reset to default" soft-deletes the override.
 
 #### Future (shape reserved, not built in MVP)
 - `sources (id, family_id, source_type, title jsonb, citation, media_id)`, `citations (source_id, fact_id | union_fact_id | person_name_id, page, note)`
@@ -289,11 +308,13 @@ Multi-row writes are atomic RPCs, never several client round-trips:
 | RPC | Does |
 |---|---|
 | `create_family(name jsonb, default_language)` | inserts family + owner membership (the only `security definer` write; bootstraps membership) |
+| `create_person(family_id, person jsonb)` | a person with no relationships yet (e.g. the first person) |
 | `add_relative(anchor_id, relation, person jsonb, options jsonb)` | creates person + names + facts + correct union/parent_child rows in one transaction |
 | `connect_existing(anchor_id, other_id, relation, options)` | same relationship logic, no new person |
 | `person_delete_impact(person_id)` | counts parents/spouses/children/media for the confirmation dialog |
 | `soft_delete_person(person_id)` / `restore_person(person_id)` | sets `deleted_at` on the person only; edges remain and are hidden because an endpoint is deleted, so restore is lossless |
-| `set_localized_value(...)` | applies the auto/manual overwrite rule server-side |
+
+Relations understood by `add_relative` / `connect_existing` ("other is anchor's …"): `parent`, `adoptive_parent`, `child`, `spouse`, `sibling`, `step_parent`. Options: `lineage`, `union_id`, `other_parent_id`, `apply_to_siblings`, `parent_ids` (half-siblings), `via_parent_id` (step-parent), `children_lineage`, `union_type`, `status`. The auto/manual overwrite rule (I9) is enforced by triggers, so it holds for direct table writes too.
 
 ### 3.6 RLS strategy
 
@@ -307,13 +328,14 @@ private.has_family_role(fid uuid, min_role family_role) returns bool  -- owner >
 | Table | select | insert / update | delete |
 |---|---|---|---|
 | families | member | update: owner | none (soft delete by owner via RPC) |
-| family_members | member of same family | owner only (+ "last owner" trigger); a member may update only their own `person_id` | owner; self (leave) |
-| persons, person_names, person_name_forms, unions, union_partners, parent_child, person_facts, union_facts, media, media_links | member | editor+ | **none** (soft delete only) |
+| family_members | member of same family | none (via `create_family` only) | none |
+| persons, person_names, person_name_forms, person_facts, unions, union_partners, union_facts, parent_child, media, media_links, kinship_terms | member | editor+ | **none** (soft delete), except link/value tables `person_name_forms`, `union_partners`, `media_links`: editor |
 | audit_log | member | none | none |
 | languages | any authenticated | none | none |
-| profiles | self + co-members (display_name only) | self | none |
 
-pgTAP tests assert: non-member sees 0 rows; viewer cannot write; editor cannot change membership; cross-family relationship insert fails (composite FK); cycle insert fails.
+Grants: `anon` has no table access; `TRUNCATE` (which bypasses RLS) is revoked.
+
+Tests (Vitest against a disposable local Postgres with a Supabase shim, `pnpm test:db`) assert: non-member sees 0 rows; anon is denied; viewer cannot write; editor cannot change membership; no hard deletes or truncate; cross-family links fail; cycles fail; storage folder isolation.
 
 ### 3.7 Storage
 
@@ -326,7 +348,7 @@ pgTAP tests assert: non-member sees 0 rows; viewer cannot write; editor cannot c
   family-media/{family_id}/family/{media_id}.jpg        -- group photos (linked via media_links)
   family-media/{family_id}/exports/{export_id}.png
   ```
-- Storage policies on `storage.objects`: `bucket_id = 'family-media' and private.has_family_role(((storage.foldername(name))[1])::uuid, 'viewer'|'editor')`. Read requires viewer; write requires editor.
+- Storage policies on `storage.objects`: `bucket_id = 'family-media' and private.has_family_role(private.storage_family_id(name), …)`. Read requires viewer, upload/update requires editor, and deleting a binary requires owner (media rows are soft-deleted). `storage_family_id` returns null for a non-uuid first segment, so malformed paths are denied.
 - Client resizes photos before upload (max 2000px + 256px thumbnail, EXIF stripped for privacy). Display uses short-lived **signed URLs**.
 
 ---
@@ -388,7 +410,7 @@ Siblings are linked through parents, so this flow asks: *"Rajiv has no parents r
 | I6 | `parent_child.union_id` ⇒ parent is a partner of that union | trigger |
 | I7 | All endpoints belong to the same family | composite FKs |
 | I8 | One primary name per person; one birth and one death fact | partial unique indexes |
-| I9 | Auto language output never overwrites `manual`/`corrected` | language service + `set_localized_value` |
+| I9 | Auto language output never overwrites `manual`/`corrected` | language service + DB triggers on every localized column and name form |
 | I10 | No hard deletes from the client | RLS (no delete policies) |
 | W1–Wn | *Warnings, not blocks:* parent younger than child, birth after death, marrying a close blood relative, child born after a parent's death + 1 year | domain validator in the UI |
 
@@ -402,12 +424,13 @@ The DB enforces hard invariants (I1–I10). The UI warns on plausibility issues 
 4. **Step**: via a parent's union where there is no shared parent.
 5. Several paths can exist (cousin marriage, adoption). Return the shortest/closest as primary, and the others in `alternatives`.
 
-Output (structured, language-neutral):
+Output (structured, language-neutral, **computed on demand, never stored**):
 
 ```ts
 {
   kind: 'blood' | 'affinal' | 'step' | 'self' | 'none',
   key: 'M.M.eB',              // kinship path: mother → mother → elder brother
+  english: 'maternal_grand_uncle',   // readable English identifier for the same relationship
   steps: [
     { from: 'you',  to: 'mom',     edge: 'parent', lineage: 'biological' },
     { from: 'mom',  to: 'grandma', edge: 'parent', lineage: 'biological' },
@@ -421,7 +444,7 @@ Output (structured, language-neutral):
 }
 ```
 
-**Terminology** (`src/domain/kinship/terms/{en,mr}.ts`) maps the path pattern + genders + relative age to a label:
+**Terminology**: the built-in defaults (`src/domain/kinship/terms/{en,mr}.ts`) map the path pattern + genders + relative age to a label. The family can override or add any label from the in-site **Relationship dictionary** page (`kinship_terms` table). Lookup tries the most specific key first, then generalisations (`F.eB` → `F.B` → `P.Sib`).
 
 | key | English | Marathi |
 |---|---|---|
@@ -496,7 +519,7 @@ supabase/
   migrations/          0001_extensions_enums.sql, 0002_core_tables.sql, 0003_integrity_triggers.sql,
                        0004_rls.sql, 0005_storage.sql, 0006_audit.sql, 0007_rpcs.sql
   functions/language/  Edge Function: translate / transliterate / detect, with pluggable providers
-  tests/               pgTAP: rls.test.sql, invariants.test.sql
+  tests/               Vitest DB tests: rpcs, invariants, rls (+ support/ shim and harness)
   seed.sql             demo family for local dev only
 ```
 
@@ -514,14 +537,14 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 
 | Phase | Scope | Exit criteria |
 |---|---|---|
-| **0. Scaffold** | Vite + React + TS + Tailwind + ESLint/Prettier + Vitest + pnpm; `supabase init`; folder skeleton; README with local setup | `pnpm build`, `pnpm test`, `pnpm lint` green |
-| **1. Database** | Migrations 0001–0007: enums, tables, FKs, indexes, constraints, integrity triggers, RLS, storage bucket + policies, audit trigger, RPCs; pgTAP tests; generated TS types | `supabase db reset` + `supabase test db` green on local stack |
+| **0. Scaffold** ✅ | Vite + React + TS + Tailwind + ESLint/Prettier + Vitest + pnpm; `supabase init`; folder skeleton; README with local setup | `pnpm build`, `pnpm test`, `pnpm lint` green |
+| **1. Database** ✅ | Migrations: enums, tables, FKs, indexes, constraints, integrity triggers, RLS, storage bucket + policies, audit trigger, kinship dictionary, RPCs; DB tests | `pnpm test:db` green (77 tests); still to do: apply to the hosted project and generate TS types |
 | **2. Domain core** | `dates`, `genealogy`, `kinship` resolver + en/mr terms, `validation`, `dedupe`, `localized` with the full test matrix in §4.9 | Vitest green; resolver covers all listed cases |
-| **3. Auth & families** | Email OTP/magic-link login, profile, families list, create family, "this is me", member list (read-only) | Real sign-in against Supabase; RLS verified from the UI |
+| **3. Auth & families** | Password-only login to the shared account, sign out, create/select family, device "editor name" and "this is me" | Real sign-in against Supabase; RLS verified from the UI |
 | **4. People & relationships** | Person drawer, bilingual person form (manual entry), add-relative flows, connect existing, duplicate warning, search, edit, soft delete with impact dialog, trash/restore | All flows persist via RPCs; no fake state |
 | **5. Tree view** | Projection, dagre union-graph layout, Person/Union nodes, lineage edge styles, focus/zoom/pan, expand/collapse, ancestors/descendants modes | 3-generation focus view of a 200-person seed family is smooth |
 | **6. Language service** | Edge Function + provider interface + first providers; Generate Marathi/English buttons; source badges; staleness hint | Overwrite rule tested; provider swappable via env |
-| **7. Relationship finder** | "How am I related to X?", path list, English + Marathi term, path highlight in graph | Matches domain tests in the UI |
+| **7. Relationship finder** | "How am I related to X?", path list, English + Marathi term, path highlight in graph, **Relationship dictionary** editor page | Matches domain tests in the UI; dictionary edits apply immediately |
 | **8. Media** | Profile photo upload (client resize, EXIF strip), signed URLs, gallery basics | Storage RLS verified (non-member denied) |
 | **9. Export** | SVG renderer from layout, PNG rasterization, scope (whole/branch/ancestors/descendants) and language (en/mr/bilingual) options | Printable PNG/SVG with correct Devanagari |
 
@@ -529,10 +552,10 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 
 ---
 
-## 7. Open questions for you
+## 7. Open items
 
-1. **Supabase project:** do you have a hosted project (URL + anon key) yet? Until then I'll develop against the local Supabase stack. Secrets go in the environment, never in the repo.
-2. **Auth method:** I recommend email OTP / magic link first (no SMS cost), with Google sign-in next. Phone OTP is popular in India but needs an SMS provider. Preference?
-3. **Language providers:** do you have access to Bhashini or an AI4Bharat IndicXlit endpoint, and/or an Anthropic API key? My proposal: Claude as the first implementation for both translation and strict name transliteration (one key, good quality on Indian names), behind the provider interface. IndicXlit/Bhashini can be swapped in for transliteration once access exists.
-4. **Marathi kinship terms:** please review the table in §4.9 and note your family's regional usage (for example, आत्याचे यजमान: मामा vs आतोबा).
-5. **Hosting:** for a static SPA, Vercel, Netlify, Cloudflare Pages and Supabase hosting all work. Any preference? This doesn't block anything now.
+1. **Hosted Supabase access from the dev environment.** The cloud dev environment's network policy blocks `hbpguqvcyebidnvjvxzy.supabase.co`, and applying migrations needs a credential. See README → "Applying migrations".
+2. **Shared login account.** Create it once in the Supabase dashboard (README → "Shared family login").
+3. **Language providers** (Phase 6): Bhashini / IndicXlit access and/or an Anthropic API key.
+4. **Marathi kinship terms**: the defaults in §4.9 are a starting point and can be edited in the app.
+5. **Hosting** for the static SPA (Vercel / Netlify / Cloudflare Pages): not blocking.

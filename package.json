@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --project unit",
+    "test": "vitest run --project unit --passWithNoTests",
     "test:db": "vitest run --project db",
     "db:types": "supabase gen types typescript --linked --schema public > src/types/database.types.ts"
   },
