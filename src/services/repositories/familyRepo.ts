@@ -1,33 +1,21 @@
-// The only place that talks to Supabase about families.
-import type { LocalizedText } from '@/domain/localized/localized';
+// The only place that talks to Supabase about the family record itself.
 import type { FamilyRow } from '@/types/db';
 import { supabase } from '@/services/supabase';
 
-export type FamilySummary = FamilyRow & { peopleCount: number };
+const DEFAULT_NAME = { en: { v: 'Family Tree', src: 'manual' }, mr: { v: 'कुटुंबवृक्ष', src: 'manual' } };
 
-export async function listFamilies(): Promise<FamilySummary[]> {
-  const { data, error } = await supabase
-    .from('families')
-    .select('*, persons(count)')
-    .is('deleted_at', null)
-    .is('persons.deleted_at', null)
-    .eq('persons.is_placeholder', false)
-    .order('created_at');
-  if (error) throw error;
-  return (data as (FamilyRow & { persons: { count: number }[] })[]).map(({ persons, ...f }) => ({
-    ...f,
-    peopleCount: persons[0]?.count ?? 0,
-  }));
-}
+/**
+ * The app holds one family tree for the shared login. Returns it, creating it on first use.
+ * (The schema supports several families; the UI simply uses the first.)
+ */
+export async function ensureFamily(): Promise<FamilyRow> {
+  const existing = await supabase.from('families').select('*').is('deleted_at', null).order('created_at').limit(1);
+  if (existing.error) throw existing.error;
+  if (existing.data.length) return existing.data[0] as FamilyRow;
 
-export async function getFamily(id: string): Promise<FamilyRow | null> {
-  const { data, error } = await supabase.from('families').select('*').eq('id', id).is('deleted_at', null).maybeSingle();
-  if (error) throw error;
-  return data as FamilyRow | null;
-}
-
-export async function createFamily(name: LocalizedText, defaultLanguage = 'mr'): Promise<string> {
-  const { data, error } = await supabase.rpc('create_family', { p_name: name, p_default_language: defaultLanguage });
-  if (error) throw error;
-  return data as string;
+  const created = await supabase.rpc('create_family', { p_name: DEFAULT_NAME, p_default_language: 'mr' });
+  if (created.error) throw created.error;
+  const row = await supabase.from('families').select('*').eq('id', created.data as string).single();
+  if (row.error) throw row.error;
+  return row.data as FamilyRow;
 }

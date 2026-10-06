@@ -7,6 +7,7 @@ const KEYS = {
   uiLanguage: 'ft.uiLanguage',
   me: (familyId: string) => `ft.me.${familyId}`,
   lastFamily: 'ft.lastFamily',
+  lastPerson: (familyId: string) => `ft.lastPerson.${familyId}`,
 };
 
 function read(key: string): string | null {
@@ -33,6 +34,8 @@ export const deviceSettings = {
   setUiLanguage: (v: string) => write(KEYS.uiLanguage, v),
   mePersonId: (familyId: string) => read(KEYS.me(familyId)),
   setMePersonId: (familyId: string, personId: string | null) => write(KEYS.me(familyId), personId),
+  lastPersonId: (familyId: string) => read(KEYS.lastPerson(familyId)),
+  setLastPersonId: (familyId: string, personId: string) => write(KEYS.lastPerson(familyId), personId),
   lastFamily: () => read(KEYS.lastFamily),
   setLastFamily: (familyId: string) => write(KEYS.lastFamily, familyId),
 };

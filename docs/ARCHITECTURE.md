@@ -1,6 +1,6 @@
 # Family Tree — Architecture
 
-Status: **Phases 0–3 implemented** (scaffold, database, domain core, login & families). See §0 for decisions made after review.
+Status: **Phases 0–4 implemented, Phase 5 basic** (scaffold, database, domain core, login, people & relationships, tree view). See §0 for decisions made after review.
 
 ---
 
@@ -13,6 +13,7 @@ Status: **Phases 0–3 implemented** (scaffold, database, domain core, login & f
 | "Who changed this?" | Because everyone shares one account, each device can set an optional editor name. It is sent as the `x-editor-name` header and recorded in `audit_log.actor_label`. |
 | "How am I related to X?" | "Me" is chosen **per device** (stored in the browser), not tied to an account. The finder can always take any two people. |
 | Marathi (and English) relationship terms | An **editable dictionary inside the site**. Built-in defaults ship in code, and per-family overrides and additions live in `kinship_terms`. Lookup order: family override → built-in default → composed description. |
+| One tree | The shared login has **one family tree**. After login the app opens straight into it (the family row is created silently on first use). The schema still supports several families. |
 | Hosting | **Vercel** (static Vite build, SPA rewrites in `vercel.json`, env vars set in the Vercel dashboard). Language-provider calls go through Supabase Edge Functions so API keys never reach the browser. |
 | Supabase project | `hbpguqvcyebidnvjvxzy`. Migrations are written and tested locally. Applying them to the hosted project needs network access and credentials (see README). |
 
@@ -542,8 +543,8 @@ Each phase ends at a checkpoint for your review: typecheck, lint and tests pass,
 | **1. Database** ✅ | Migrations: enums, tables, FKs, indexes, constraints, integrity triggers, RLS, storage bucket + policies, audit trigger, kinship dictionary, RPCs; DB tests | `pnpm test:db` green (77 tests); still to do: apply to the hosted project and generate TS types |
 | **2. Domain core** ✅ | `dates` (parse/format en+mr, compare), `genealogy` graph (derived siblings/step/ancestors), `kinship` resolver (path key + English id) with default en/mr terms and dictionary lookup, `localized` overwrite rule, `dedupe`, `validation` warnings | `pnpm test` green (128 tests) |
 | **3. Auth & families** ✅ | Password-only login to the shared account, sign out, family list + create (bilingual name), family page, device editor name (sent as `x-editor-name`, URI-encoded), UI language toggle (Marathi default) | Browser smoke test with mocked Supabase passes; real sign-in pending migrations on the hosted project |
-| **4. People & relationships** | Person drawer, bilingual person form (manual entry), add-relative flows, connect existing, duplicate warning, search, edit, soft delete with impact dialog, trash/restore | All flows persist via RPCs; no fake state |
-| **5. Tree view** | Projection, dagre union-graph layout, Person/Union nodes, lineage edge styles, focus/zoom/pan, expand/collapse, ancestors/descendants modes | 3-generation focus view of a 200-person seed family is smooth |
+| **4. People & relationships** ✅ | Add first person, person drawer, bilingual person form (manual entry, fuzzy dates with live preview), add relative (father/mother/spouse/son/daughter/brother/sister/adoptive/step) with context questions, connect existing, duplicate warning, header search (English + Marathi), edit, soft delete with impact dialog | Browser e2e against local Postgres + PostgREST with real RLS passes |
+| **5. Tree view** (basic ✅) | React Flow + dagre union-graph layout, gender accents, lineage edge styles, divorced partnerships dashed, focus neighbourhood for >150 people. Still to do: spouse-adjacent family layout, expand/collapse, ancestors/descendants modes | — |
 | **6. Language service** | Edge Function + provider interface + first providers; Generate Marathi/English buttons; source badges; staleness hint | Overwrite rule tested; provider swappable via env |
 | **7. Relationship finder** | "How am I related to X?", path list, English + Marathi term, path highlight in graph, **Relationship dictionary** editor page | Matches domain tests in the UI; dictionary edits apply immediately |
 | **8. Media** | Profile photo upload (client resize, EXIF strip), signed URLs, gallery basics | Storage RLS verified (non-member denied) |

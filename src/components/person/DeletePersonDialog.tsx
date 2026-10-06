@@ -1,0 +1,46 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { displayName, type PersonView } from '@/domain/family/familyModel';
+import { useI18n } from '@/i18n/I18nProvider';
+import { deleteImpact, softDeletePerson } from '@/services/repositories/personRepo';
+import { Button } from '@/components/ui/Button';
+import { Dialog } from '@/components/ui/Dialog';
+import { Loading } from '@/components/ui/Status';
+import { errorMessage } from './AddRelativeDialog';
+
+export function DeletePersonDialog({ person, onClose, onDone }: { person: PersonView; onClose: () => void; onDone: () => void }) {
+  const { t, lang } = useI18n();
+  const name = displayName(person, lang).text;
+  const impact = useQuery({ queryKey: ['deleteImpact', person.id], queryFn: () => deleteImpact(person.id), gcTime: 0 });
+  const del = useMutation({ mutationFn: () => softDeletePerson(person.id), onSuccess: onDone });
+
+  return (
+    <Dialog title={t('delete.title', { name })} onClose={onClose}>
+      {impact.isPending && <Loading />}
+      {impact.data && (
+        <div className="space-y-3">
+          <p>{t('delete.has', { name })}</p>
+          <ul className="list-inside list-disc text-stone-700">
+            <li>{t('delete.parents', { count: impact.data.parents })}</li>
+            <li>{t('delete.partners', { count: impact.data.partners })}</li>
+            <li>{t('delete.children', { count: impact.data.children })}</li>
+            <li>{t('delete.media', { count: impact.data.media })}</li>
+          </ul>
+          <p className="text-sm text-stone-500">{t('delete.note')}</p>
+        </div>
+      )}
+      {del.isError && (
+        <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">
+          {errorMessage(del.error)}
+        </p>
+      )}
+      <div className="mt-6 flex justify-end gap-2">
+        <Button variant="secondary" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button className="bg-red-700 hover:bg-red-800" disabled={!impact.data || del.isPending} onClick={() => del.mutate()}>
+          {t('delete.confirm')}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
