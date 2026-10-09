@@ -27,6 +27,8 @@ type Props = {
   /** this device's "me" person, if set */
   meId?: string | null;
   onToggleMe: () => void;
+  /** re-centre the family view on this person; absent when it already is */
+  onShowFamily?: () => void;
   /** how this person is related to "me", e.g. "uncle" */
   relationToMe?: string;
   familyId: string;
@@ -51,6 +53,7 @@ export function PersonDrawer({
   onBirthOrder,
   meId,
   onToggleMe,
+  onShowFamily,
   relationToMe,
   familyId,
   onChanged,
@@ -188,6 +191,11 @@ export function PersonDrawer({
       )}
 
       <div className="flex flex-wrap gap-2 border-b border-stone-200 p-4">
+        {onShowFamily && (
+          <Button variant="secondary" className="w-full border-amber-700 text-amber-900" onClick={onShowFamily}>
+            👪 {t('person.showFamily')}
+          </Button>
+        )}
         <Button onClick={onAddRelative}>{t('person.addRelative')}</Button>
         <Button variant="secondary" onClick={onEdit}>
           {t('person.edit')}

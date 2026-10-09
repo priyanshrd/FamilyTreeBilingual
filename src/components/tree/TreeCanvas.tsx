@@ -37,6 +37,9 @@ type PersonData = {
   photo?: string;
   /** relationship to this device's "me" */
   relation?: string;
+  /** labels for the "open their family" badge */
+  moreShort?: string;
+  moreLabel?: string;
 };
 
 const GENDER_ACCENT: Record<string, string> = {
@@ -63,8 +66,12 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
         {data.relation && <span className="truncate text-[14px] font-medium text-sky-800">{data.relation}</span>}
       </span>
       {data.more && (
-        <span aria-hidden className="absolute -top-2 -right-2 flex size-[20px] items-center justify-center rounded-full bg-amber-700 text-[12px] text-white">
-          +
+        <span
+          data-open-family
+          title={data.moreLabel}
+          className="nodrag absolute -top-3 -right-3 flex h-[28px] cursor-pointer items-center gap-0.5 rounded-full border-2 border-white bg-amber-700 px-2 text-[12px] font-medium text-white shadow hover:bg-amber-800"
+        >
+          + {data.moreShort}
         </span>
       )}
       <Handle type="source" position={Position.Bottom} className="!invisible" />
@@ -90,6 +97,12 @@ function edgeStyle(e: LaidOutEdge): React.CSSProperties {
   return { stroke: '#57534e', strokeWidth: 1.5, strokeDasharray: dash };
 }
 
+/** How each view was left, for this visit: boxes moved by hand and the zoom/scroll. */
+const viewMemory = {
+  offsets: new Map<string, Map<string, { x: number; y: number }>>(),
+  viewports: new Map<string, { x: number; y: number; zoom: number }>(),
+};
+
 /** Fitting the tree: never above 100% or below a readable size — both grow with the chosen text size. */
 function fitOptions() {
   const k = textScale();
@@ -108,13 +121,15 @@ type Props = {
   /** identifies what is shown (view + person); the tree is re-fitted only when it changes */
   viewKey?: string;
   onSelect: (id: string) => void;
+  /** show this person's own family (the "+ family" badge, or a double-click) */
+  onOpenFamily?: (id: string) => void;
   /** profile thumbnail per person */
   photoUrl?: (personId: string) => string | undefined;
   /** relationship of each person to this device's "me" */
   relations?: Map<string, string>;
 };
 
-function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewKey, onSelect, photoUrl, relations }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewKey = '', onSelect, onOpenFamily, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
   const textSize = useTextSize();
@@ -152,6 +167,8 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
           highlight: Boolean(highlight?.has(n.id)),
           photo: photoUrl?.(n.id),
           relation: relations?.get(n.id),
+          moreShort: t('tree.moreShort'),
+          moreLabel: t('tree.moreLabel', { name: name.text }),
         } satisfies PersonData,
         ariaLabel: name.text,
       };
@@ -175,28 +192,39 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
     },
     [layout, flow, selectedId],
   );
-  // A new layout resets box positions. The view is only re-fitted when a different view or person
-  // is shown (viewKey); when the same view merely gets new data — e.g. a change made by someone else
-  // on another device — the zoom and scroll position stay where the viewer left them.
+  // Each view (a person's family, the whole tree) remembers how it was left: boxes moved by hand
+  // (kept as offsets from the automatic layout, so they survive new data) and the zoom/scroll.
+  // Coming back to it — Back, or opening the same family again — shows it exactly as it was.
+  // New data for the same view (e.g. someone else's change) keeps both; only a view never seen
+  // before is fitted to the screen.
   const lastLayout = useRef<TreeLayout | null>(null);
   const lastViewKey = useRef<string | undefined>(undefined);
   useEffect(() => {
     const fresh = lastLayout.current !== layout;
-    const refit = !lastLayout.current || lastViewKey.current !== viewKey;
+    const switched = !lastLayout.current || lastViewKey.current !== viewKey;
     lastLayout.current = layout;
     lastViewKey.current = viewKey;
-    setNodes((prev) => {
-      const kept = fresh ? new Map() : new Map(prev.map((n) => [n.id, n.position]));
-      return layout.nodes.map((n) => toNode(n, kept.get(n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id))));
-    });
-    if (fresh && refit)
-      requestAnimationFrame(async () => {
+    const offsets = viewMemory.offsets.get(viewKey);
+    setNodes(() =>
+      layout.nodes.map((n) => {
+        const id = n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id);
+        const o = offsets?.get(id);
+        return toNode(n, o ? { x: n.x + o.x, y: n.y + o.y } : undefined);
+      }),
+    );
+    if (!fresh || !switched) return;
+    const saved = viewMemory.viewports.get(viewKey);
+    if (saved) {
+      requestAnimationFrame(() => void flow.setViewport(saved, { duration: 300 }));
+      return;
+    }
+    requestAnimationFrame(async () => {
         if (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM * textScale())) return;
         await flow.fitView(fitOptions());
         // too big to fit readably: show the chosen person rather than the middle of the tree
         const anchor = selectedId ?? focusId;
         if (anchor && flow.getZoom() <= MIN_FIT_ZOOM * textScale() + 0.01) focus(anchor, Math.max(flow.getZoom(), FOCUS_ZOOM * textScale()));
-      });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new layout re-fits; selection changes are handled by centerOn
   }, [layout, toNode, setNodes, flow]);
 
@@ -269,6 +297,26 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
     [setNodes],
   );
 
+  // Where boxes were moved by hand, relative to the automatic layout (see viewMemory).
+  const rememberOffsets = useCallback(
+    (ids: string[], dragged: Node) => {
+      const home = new Map(layout.nodes.map((n) => [n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id), n] as const));
+      const offsets = new Map(viewMemory.offsets.get(viewKey));
+      const start = dragStart.current;
+      const origin = start?.get(dragged.id);
+      if (!start || !origin) return;
+      const dx = dragged.position.x - origin.x;
+      const dy = dragged.position.y - origin.y;
+      for (const id of ids) {
+        const h = home.get(id);
+        const s = start.get(id);
+        if (h && s) offsets.set(id, { x: s.x + dx - h.x, y: s.y + dy - h.y });
+      }
+      viewMemory.offsets.set(viewKey, offsets);
+    },
+    [layout, viewKey],
+  );
+
   useEffect(() => {
     if (!centerOn) return;
     focus(centerOn, Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale()));
@@ -304,7 +352,20 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
   }, [selectedId, flow]);
 
   return (
-    <div ref={wrapper} className="absolute inset-0">
+    <div
+      ref={wrapper}
+      className="absolute inset-0"
+      // Double-click a box: show their family. (Found by position: the tree's drag handling means the
+      // second click of a double-click does not reach the box itself.)
+      onDoubleClick={(e) => {
+        if (!onOpenFamily) return;
+        const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const hit = flow
+          .getNodes()
+          .find((n) => n.type === 'person' && p.x >= n.position.x && p.x <= n.position.x + PERSON_W && p.y >= n.position.y && p.y <= n.position.y + PERSON_H);
+        if (hit) onOpenFamily(hit.id.slice(2));
+      }}
+    >
       <ReactFlow
         ariaLabelConfig={ariaLabels}
         nodes={nodes}
@@ -314,10 +375,18 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         onNodeDrag={onNodeDrag}
         onNodeDragStop={(e, node) => {
           onNodeDrag(e, node);
+          rememberOffsets([...(dragStart.current?.keys() ?? [])], node);
           dragStart.current = null;
         }}
+        onMoveEnd={(_, viewport) => viewMemory.viewports.set(viewKey, viewport)}
         nodeTypes={nodeTypes}
-        onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
+        onNodeClick={(event, node) => {
+          if (node.type !== 'person') return;
+          const id = node.id.slice(2);
+          if ((event.target as HTMLElement).closest('[data-open-family]') && onOpenFamily) onOpenFamily(id);
+          else onSelect(id);
+        }}
+        zoomOnDoubleClick={false}
         fitView
         fitViewOptions={fitOptions()}
         minZoom={0.1}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { AddRelativeDialog } from '@/components/person/AddRelativeDialog';
 import { DeletePersonDialog } from '@/components/person/DeletePersonDialog';
 import { BirthOrderDialog } from '@/components/person/BirthOrderDialog';
@@ -60,9 +61,28 @@ export function WorkspacePage() {
   const [centerOn, setCenterOn] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [showAll, setShowAll] = useState<boolean | null>(null);
-  const [view, setView] = useState<View>('family');
-  const [focus, setFocus] = useState<string | null>(null);
-  const [history, setHistory] = useState<string[]>([]);
+  // Which view and whose family are shown live in the page address (?view=family&person=…): a refresh
+  // keeps the place, and the browser's / phone's Back button steps back through the families visited.
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const view: View = (['family', 'tree', 'list'] as const).find((v) => v === params.get('view')) ?? 'family';
+  const focus = params.get('person');
+  const setPlace = (next: { view?: View; person?: string | null }, push = false) =>
+    setParams(
+      (p) => {
+        const q = new URLSearchParams(p);
+        if (next.view) q.set('view', next.view);
+        if (next.person !== undefined) {
+          if (next.person) q.set('person', next.person);
+          else q.delete('person');
+        }
+        return q;
+      },
+      { replace: !push },
+    );
+  const setView = (v: View) => setPlace({ view: v });
+  // Back (in the toolbar) is offered when this tab has an earlier place to return to
+  const canGoBack = ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
   const [highlight, setHighlight] = useState<Set<string> | null>(null);
   const terms = useKinshipTerms(familyId);
 
@@ -170,7 +190,20 @@ export function WorkspacePage() {
 
   const lastId = familyId ? deviceSettings.lastPersonId(familyId) : null;
   const fallbackFocus = lastId && model?.persons.has(lastId) ? lastId : model ? firstPerson(model) : null;
-  const focusId = (focus && model?.persons.has(focus) ? focus : null) ?? (selectedId && model?.persons.has(selectedId) ? selectedId : null) ?? fallbackFocus;
+  const focusId = (focus && model?.persons.has(focus) ? focus : null) ?? fallbackFocus;
+  // The first family shown is written into the address too, so selecting people never changes it.
+  useEffect(() => {
+    if (fallbackFocus && (!focus || !model?.persons.has(focus))) setPlace({ person: fallbackFocus });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the place is missing or gone
+  }, [focus, fallbackFocus, model]);
+
+  // Coming back with Back: the person whose family is shown becomes the selected one again.
+  const lastFocus = useRef(focus);
+  useEffect(() => {
+    // (not when the first family is written into the address on opening the site: no panel then)
+    if (focus && lastFocus.current && focus !== lastFocus.current && model?.persons.has(focus)) setSelectedId(focus);
+    lastFocus.current = focus;
+  }, [focus, model]);
   const large = (model?.persons.size ?? 0) > SHOW_ALL_LIMIT;
   const everyone = showAll ?? !large;
 
@@ -186,15 +219,32 @@ export function WorkspacePage() {
   }, [model, focusId, view, visible]);
 
   /**
-   * Select a person. They also become the centre of the family view (with Back history), whichever
-   * view they were picked in, so switching to Family view opens their family.
+   * Show a person's own family (the family view re-centred on them). Their earlier place stays in
+   * the Back history, and each family view keeps its own arrangement (see TreeCanvas).
+   */
+  function openFamily(id: string) {
+    setSelectedId(id);
+    if (familyId) deviceSettings.setLastPersonId(familyId, id);
+    if (view === 'family' && focusId === id) return;
+    setPlace({ view: 'family', person: id }, true);
+  }
+
+  /**
+   * Select a person (opens their panel). In the family view this never rearranges the tree: if they
+   * are already on screen they are highlighted and brought into view; only someone not shown opens
+   * their own family. In the other views they also become the person whose family "Family view" shows.
    */
   function select(id: string, center = false) {
     setSelectedId(id);
     if (familyId) deviceSettings.setLastPersonId(familyId, id);
-    if (focusId && focusId !== id) setHistory((h) => [...h.slice(-49), focusId]);
-    setFocus(id);
-    if (center && view !== 'family') setCenterOn(id);
+    if (view === 'family') {
+      if (layout?.nodes.some((n) => n.kind === 'person' && n.id === id)) {
+        if (center) setCenterOn(id);
+      } else openFamily(id);
+      return;
+    }
+    setPlace({ person: id });
+    if (center) setCenterOn(id);
   }
 
   const [exporting, setExporting] = useState(false);
@@ -212,11 +262,7 @@ export function WorkspacePage() {
   }
 
   function back() {
-    const prev = history[history.length - 1];
-    if (!prev) return;
-    setHistory((h) => h.slice(0, -1));
-    setFocus(prev);
-    setSelectedId(prev);
+    void navigate(-1);
   }
 
   async function afterChange(id?: string) {
@@ -279,7 +325,7 @@ export function WorkspacePage() {
                   </button>
                 ))}
               </div>
-              {view === 'family' && history.length > 0 && (
+              {canGoBack && (
                 <button type="button" onClick={back} className={TOOL}>
                   {t('view.back')}
                 </button>
@@ -333,8 +379,9 @@ export function WorkspacePage() {
                   photoUrl={photoUrl}
                   relations={relations}
                   onPick={(id) => {
-                    setView('family');
-                    select(id);
+                    setSelectedId(id);
+                    if (familyId) deviceSettings.setLastPersonId(familyId, id);
+                    setPlace({ view: 'family', person: id }, true);
                   }}
                 />
               ) : (
@@ -348,6 +395,7 @@ export function WorkspacePage() {
                     focusId={focusId}
                     viewKey={`${view}:${focusId}:${everyone}`}
                     onSelect={(id) => select(id)}
+                    onOpenFamily={openFamily}
                     photoUrl={photoUrl}
                     relations={relations}
                   />
@@ -383,6 +431,7 @@ export function WorkspacePage() {
             }}
             meId={meId}
             onToggleMe={() => toggleMe(selectedId)}
+            onShowFamily={view !== 'family' || focusId !== selectedId ? () => openFamily(selectedId) : undefined}
             relationToMe={selectedId !== meId ? relations.get(selectedId) : undefined}
             familyId={familyId!}
             onChanged={() => void refresh()}

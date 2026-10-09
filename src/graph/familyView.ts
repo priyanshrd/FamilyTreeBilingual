@@ -6,8 +6,9 @@
 //   siblings …   [ PERSON ] — spouse(s)
 //                 children            (grouped under the right partnership)
 //
-// Clicking anyone re-centres the view on them. People with more family beyond the view are
-// flagged `more` so the UI can hint "click to see more".
+// Tapping someone only selects them; their "+ family" badge (or a double-click, or "Show family"
+// in their panel) re-centres the view on them. People with more family beyond the view are
+// flagged `more` for that badge.
 import type { GenealogyGraph, Lineage } from '@/domain/genealogy/graph';
 import { KIN_LINEAGES } from '@/domain/genealogy/graph';
 import { PERSON_H, PERSON_W, personNodeId, unionNodeId, type LaidOutEdge, type LaidOutNode, type TreeLayout } from './layout';
