@@ -243,5 +243,17 @@ export function transliterate(text: string, to: 'mr' | 'en'): string {
   return to === 'mr' ? toMarathi(text) : toEnglish(text);
 }
 
-export const TRANSLITERATION_PROVIDER = 'builtin-rules-v1';
+/**
+ * Version of the transliteration rules, stored with every automatic name. Bump it whenever the rules
+ * change: a device only rewrites an automatic name made by an OLDER version, so a device still running
+ * an older copy of the app can never undo the work of a newer one (the database enforces this too).
+ */
+export const TRANSLITERATION_VERSION = 2;
+export const TRANSLITERATION_PROVIDER = `builtin-rules-v${TRANSLITERATION_VERSION}`;
+
+/** Rules version of a stored provider label ("builtin-rules-v2" → 2); 0 when unknown. */
+export function providerVersion(provider: string | null | undefined): number {
+  const m = /^builtin-rules-v(\d+)$/.exec(provider ?? '');
+  return m ? Number(m[1]) : 0;
+}
 export { capitalize };

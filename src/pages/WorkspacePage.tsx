@@ -18,7 +18,7 @@ import { familyViewLayout } from '@/graph/familyView';
 import { layoutTree } from '@/graph/layout';
 import { neighbourhood } from '@/graph/projection';
 import { PeopleList } from '@/components/PeopleList';
-import { useFamily, useFamilyModel, useRefreshFamily } from '@/hooks/useFamily';
+import { useFamily, useFamilyModel, useFamilySync, useRefreshFamily } from '@/hooks/useFamily';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useKinshipTerms } from '@/hooks/useKinshipTerms';
 import { RelationshipFinder } from '@/components/relationship/RelationshipFinder';
@@ -53,6 +53,7 @@ export function WorkspacePage() {
   const familyId = family.data?.id;
   const modelQuery = useFamilyModel(familyId);
   const refresh = useRefreshFamily(familyId);
+  useFamilySync(familyId);
   const model = modelQuery.data;
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -345,6 +346,7 @@ export function WorkspacePage() {
                     highlight={highlight ?? undefined}
                     centerOn={centerOn}
                     focusId={focusId}
+                    viewKey={`${view}:${focusId}:${everyone}`}
                     onSelect={(id) => select(id)}
                     photoUrl={photoUrl}
                     relations={relations}

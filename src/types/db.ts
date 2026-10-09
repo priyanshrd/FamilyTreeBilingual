@@ -42,6 +42,8 @@ export type NameFormRow = {
   full_name: string;
   source: TextSource;
   generated_from: string | null;
+  /** which rules made an automatic name, e.g. "builtin-rules-v2" */
+  provider?: string | null;
 };
 
 type DateCols<P extends string> = {

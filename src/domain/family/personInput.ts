@@ -79,7 +79,8 @@ export function fillOtherLanguage(input: PersonInput, transliterate: (text: stri
   return out;
 }
 
-export const TRANSLITERATION_PROVIDER = 'builtin-rules-v1';
+export { TRANSLITERATION_PROVIDER } from '@/domain/language/transliterate';
+import { TRANSLITERATION_PROVIDER } from '@/domain/language/transliterate';
 
 /** Bilingual text → localized jsonb, keeping auto/corrected bookkeeping of the previous value. */
 export function toLocalized(b: Bi, prev: LocalizedText | null = null): LocalizedText | null {

@@ -56,15 +56,18 @@ export function EditPersonDialog({
   onDone: (personId: string) => void;
 }) {
   const { t, lang } = useI18n();
-  const [input, setInput] = useState<PersonInput>(person ? toInput(person) : EMPTY_PERSON);
+  // The person as they were when the form opened: saving compares with this, so only fields changed
+  // here are written, even if the tree refreshes with someone else's changes while the form is open.
+  const [original] = useState(person);
+  const [input, setInput] = useState<PersonInput>(original ? toInput(original) : EMPTY_PERSON);
   const [errors, setErrors] = useState<InputErrors>({});
   const save = useMutation({
     mutationFn: async () => {
       const toSave = deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input;
       const label = (toSave.name[lang as Lang] || toSave.name.en || toSave.name.mr).trim();
-      if (person) {
-        await recordChange('edit', label, () => updatePerson(familyId, person, toSave));
-        return person.id;
+      if (original) {
+        await recordChange('edit', label, () => updatePerson(familyId, original, toSave));
+        return original.id;
       }
       return recordChange('addPerson', label, () => createPerson(familyId, toSave));
     },

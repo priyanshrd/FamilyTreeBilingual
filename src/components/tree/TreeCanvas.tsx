@@ -105,6 +105,8 @@ type Props = {
   centerOn: string | null;
   /** the person the view is built around (centred when the tree is too big to fit) */
   focusId?: string | null;
+  /** identifies what is shown (view + person); the tree is re-fitted only when it changes */
+  viewKey?: string;
   onSelect: (id: string) => void;
   /** profile thumbnail per person */
   photoUrl?: (personId: string) => string | undefined;
@@ -112,7 +114,7 @@ type Props = {
   relations?: Map<string, string>;
 };
 
-function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSelect, photoUrl, relations }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewKey, onSelect, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
   const textSize = useTextSize();
@@ -173,15 +175,21 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSel
     },
     [layout, flow, selectedId],
   );
+  // A new layout resets box positions. The view is only re-fitted when a different view or person
+  // is shown (viewKey); when the same view merely gets new data — e.g. a change made by someone else
+  // on another device — the zoom and scroll position stay where the viewer left them.
   const lastLayout = useRef<TreeLayout | null>(null);
+  const lastViewKey = useRef<string | undefined>(undefined);
   useEffect(() => {
     const fresh = lastLayout.current !== layout;
+    const refit = !lastLayout.current || lastViewKey.current !== viewKey;
     lastLayout.current = layout;
+    lastViewKey.current = viewKey;
     setNodes((prev) => {
       const kept = fresh ? new Map() : new Map(prev.map((n) => [n.id, n.position]));
       return layout.nodes.map((n) => toNode(n, kept.get(n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id))));
     });
-    if (fresh)
+    if (fresh && refit)
       requestAnimationFrame(async () => {
         if (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM * textScale())) return;
         await flow.fitView(fitOptions());

@@ -22,7 +22,7 @@ export async function loadFamilyRows(familyId: string): Promise<FamilyRows> {
     fetchAll<FamilyRows['names'][number]>('person_names', 'id, person_id, name_type, is_primary, sort_order', familyId),
     fetchAll<FamilyRows['nameForms'][number]>(
       'person_name_forms',
-      'name_id, lang, given_name, middle_name, surname, full_name, source, generated_from',
+      'name_id, lang, given_name, middle_name, surname, full_name, source, generated_from, provider',
       familyId,
       { live: false },
     ),

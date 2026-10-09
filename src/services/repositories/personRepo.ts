@@ -1,6 +1,7 @@
 // Person and relationship writes. Multi-row operations go through database RPCs (atomic, validated).
 import { toColumns, type FuzzyDate } from '@/domain/dates/fuzzyDate';
 import { currentFact, type PersonView } from '@/domain/family/familyModel';
+import { providerVersion, TRANSLITERATION_VERSION } from '@/domain/language/transliterate';
 import {
   EMPTY_BI,
   effectiveLiving,
@@ -63,11 +64,17 @@ export async function connectExisting(anchorId: string, otherId: string, relatio
 
 /** Saves edits to an existing person: every field of the person form. */
 export async function updatePerson(familyId: string, person: PersonView, input: PersonInput): Promise<void> {
-  const upd = await supabase
-    .from('persons')
-    .update({ gender: input.gender, is_living: effectiveLiving(input), notes: toLocalized(input.notes, person.notes) })
-    .eq('id', person.id);
-  if (upd.error) throw upd.error;
+  // Only what was changed in the form is written, so a change someone else made meanwhile to
+  // another field of this person is not overwritten with the old value shown in this form.
+  const patch: Record<string, unknown> = {};
+  if (input.gender !== person.gender) patch.gender = input.gender;
+  if (effectiveLiving(input) !== person.isLiving) patch.is_living = effectiveLiving(input);
+  const notes = toLocalized(input.notes, person.notes);
+  if (!sameJson(notes, person.notes)) patch.notes = notes;
+  if (Object.keys(patch).length) {
+    const upd = await supabase.from('persons').update(patch).eq('id', person.id);
+    if (upd.error) throw upd.error;
+  }
 
   await saveName(familyId, person.id, 'primary', person.primaryNameId, person.names, input.name);
   await saveName(familyId, person.id, 'alias', person.otherNames.alias?.id ?? null, person.otherNames.alias?.forms ?? {}, input.nickname);
@@ -92,6 +99,13 @@ export async function updatePerson(familyId: string, person: PersonView, input: 
     const existing = currentFact(person, f.type);
     await saveFact(familyId, person.id, f.type, existing, { [f.in]: toLocalized(input[f.field], existing?.[f.in] ?? null) });
   }
+}
+
+/** Equal as stored values (null and missing are the same; key order ignored). */
+function sameJson(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown): unknown =>
+    v == null ? null : Array.isArray(v) ? v.map(norm) : typeof v === 'object' ? Object.fromEntries(Object.entries(v as object).sort().map(([k, x]) => [k, norm(x)])) : v;
+  return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 }
 
 type NameForms = Record<string, { full_name: string; source: string; generated_from: string | null }>;
@@ -156,6 +170,8 @@ async function saveFact(familyId: string, personId: string, type: FactType, exis
   if (patch.date) Object.assign(row, toColumns(patch.date));
   if ('place' in patch) row.place = patch.place;
   if ('value' in patch) row.value = patch.value;
+  // unchanged since the form was opened: leave it (someone else may have changed it meanwhile)
+  if (existing && Object.entries(row).every(([k, v]) => sameJson(v, (existing as Record<string, unknown>)[k]))) return;
   const res = existing
     ? await supabase.from('person_facts').update(row).eq('id', existing.id)
     : await supabase.from('person_facts').insert({ family_id: familyId, person_id: personId, fact_type: type, ...row });
@@ -196,7 +212,8 @@ export async function fillMissingNames(familyId: string, people: PersonView[], t
       };
     });
   if (!rows.length) return 0;
-  const res = await supabase.from('person_name_forms').insert(rows);
+  // two devices may fill the same name at the same moment: the first one wins, the other is a no-op
+  const res = await supabase.from('person_name_forms').upsert(rows, { onConflict: 'name_id,lang', ignoreDuplicates: true });
   if (res.error) throw res.error;
   return rows.length;
 }
@@ -222,8 +239,9 @@ export async function refreshAutoNames(people: PersonView[], convert: (text: str
       const from = form?.generated_from as Lang | null | undefined;
       const source = from ? p.names[from] : undefined;
       if (!form || form.source !== 'auto' || !source || source.source === 'auto') continue;
+      // only names made by OLDER rules: an out-of-date copy of the app must not undo a newer one
+      if (providerVersion(form.provider) >= TRANSLITERATION_VERSION) continue;
       const text = convert(source.full_name, lang);
-      if (text === form.full_name) continue;
       const res = await supabase
         .from('person_name_forms')
         .update({ ...splitName(text), provider: TRANSLITERATION_PROVIDER })
@@ -231,7 +249,7 @@ export async function refreshAutoNames(people: PersonView[], convert: (text: str
         .eq('lang', lang)
         .eq('source', 'auto');
       if (res.error) throw res.error;
-      changed++;
+      if (text !== form.full_name) changed++;
     }
   }
   return changed;
