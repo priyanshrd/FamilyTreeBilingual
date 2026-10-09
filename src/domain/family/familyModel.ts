@@ -176,3 +176,8 @@ export function searchPeople(model: FamilyModel, query: string, limit = 12): Per
     .slice(0, limit)
     .map(([p]) => p);
 }
+
+/** An "unknown parent" placeholder that has not been given any name yet. */
+export function isUnknown(p: PersonView | undefined): boolean {
+  return Boolean(p?.isPlaceholder) && !Object.values(p!.names).some((f) => f.full_name.trim());
+}

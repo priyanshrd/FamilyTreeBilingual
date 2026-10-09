@@ -22,7 +22,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { useKinshipTerms } from '@/hooks/useKinshipTerms';
 import { RelationshipFinder } from '@/components/relationship/RelationshipFinder';
 import { deviceSettings } from '@/services/deviceSettings';
-import { fillMissingNames } from '@/services/repositories/personRepo';
+import { fillMissingNames, refreshAutoNames, repairNamedPlaceholders } from '@/services/repositories/personRepo';
 import { transliterate } from '@/domain/language/transliterate';
 
 /** Above this many people the tree shows the neighbourhood of the selected person by default. */
@@ -51,15 +51,20 @@ export function WorkspacePage() {
   const [highlight, setHighlight] = useState<Set<string> | null>(null);
   const terms = useKinshipTerms(familyId);
 
-  // People entered before auto-fill existed: fill their missing Marathi / English names once.
+  // Once per visit: tidy data entered before recent fixes (named placeholders, missing or outdated
+  // automatic names). Never changes anything typed by hand.
   const backfilled = useRef(false);
   useEffect(() => {
     if (!model || !familyId || backfilled.current || !deviceSettings.autoFill()) return;
     backfilled.current = true;
     const people = [...model.persons.values()];
     void (async () => {
-      const filled = (await fillMissingNames(familyId, people, 'mr', transliterate)) + (await fillMissingNames(familyId, people, 'en', transliterate));
-      if (filled) await refresh();
+      const changed =
+        (await repairNamedPlaceholders(people)) +
+        (await fillMissingNames(familyId, people, 'mr', transliterate)) +
+        (await fillMissingNames(familyId, people, 'en', transliterate)) +
+        (await refreshAutoNames(people, transliterate));
+      if (changed) await refresh();
     })().catch(() => {
       backfilled.current = false;
     });

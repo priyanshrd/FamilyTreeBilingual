@@ -24,6 +24,10 @@ const DICTIONARY: string[][] = [
   ['Mohan', 'मोहन'], ['Manohar', 'मनोहर'], ['Nanda', 'नंदा'], ['Neha', 'नेहा'], ['Omkar', 'ओंकार'], ['Pallavi', 'पल्लवी'],
   ['Pratibha', 'प्रतिभा'], ['Rekha', 'रेखा'], ['Revati', 'रेवती'], ['Sakharam', 'सखाराम'], ['Shalini', 'शालिनी'], ['Shubham', 'शुभम'],
   ['Swati', 'स्वाती'], ['Raju', 'राजू'], ['Ganpat', 'Ganapat', 'गणपत'], ['Sita', 'Seeta', 'सीता'], ['Ratna', 'रत्ना'], ['Sujata', 'सुजाता'], ['Bhushan', 'भूषण'], ['Ravi', 'रवी'], ['Sagar', 'सागर'], ['Rani', 'राणी'], ['Uday', 'उदय'], ['Vaishali', 'वैशाली'], ['Vinod', 'विनोद'], ['Yashwant', 'यशवंत'], ['Yogesh', 'योगेश'],
+  ['Deepali', 'Dipali', 'दीपाली'], ['Rajendra', 'राजेंद्र'], ['Shridhar', 'Shreedhar', 'श्रीधर'], ['Pushpakala', 'पुष्पकला'],
+  ['Dadgonda', 'Dadagonda', 'दादगोंडा'], ['Ellappa', 'एलप्पा'], ['Tavanappa', 'तवनप्पा'], ['Tatya', 'तात्या'], ['Appa', 'आप्पा'],
+  ['Anna', 'अण्णा'], ['Nana', 'नाना'], ['Bapu', 'बापू'], ['Shrikant', 'श्रीकांत'], ['Shrinivas', 'Shriniwas', 'श्रीनिवास'],
+  ['Shriram', 'श्रीराम'], ['Gangappa', 'गंगाप्पा'], ['Sangappa', 'संगप्पा'], ['Basappa', 'बसप्पा'], ['Mallappa', 'मल्लप्पा'],
   // honorifics and kinship words used in names
   ['Rao', 'राव'], ['Bai', 'बाई'], ['Saheb', 'साहेब'], ['Bhau', 'भाऊ'], ['Tai', 'ताई'], ['Aai', 'आई'], ['Baba', 'बाबा'], ['Kaka', 'काका'],
   ['Mama', 'मामा'], ['Mavshi', 'मावशी'], ['Aatya', 'Atya', 'आत्या'], ['Aaji', 'Aji', 'आजी'], ['Ajoba', 'Aajoba', 'आजोबा'],
@@ -105,6 +109,8 @@ function latinWordToDeva(word: string): string {
   const lower = word.toLowerCase();
   const known = LATIN_TO_DEVA.get(lower);
   if (known) return known;
+  if (lower.startsWith('shri') && lower.length > 5) return 'श्री' + latinWordToDeva(lower.slice(4));
+  if (lower.startsWith('shree') && lower.length > 6) return 'श्री' + latinWordToDeva(lower.slice(5));
   for (const [suffix, deva] of SUFFIXES) {
     if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) return latinWordToDeva(lower.slice(0, -suffix.length)) + deva;
   }

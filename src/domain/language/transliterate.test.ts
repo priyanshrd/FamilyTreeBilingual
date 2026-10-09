@@ -24,6 +24,8 @@ describe('English → Marathi', () => {
     ['Gautam', 'गौतम'],
     ['Ratnabai Patil', 'रत्नाबाई पाटील'],
     ['Ganpatrao', 'गणपतराव'],
+    ['Dadgonda Patil (Tatya)', 'दादगोंडा पाटील (तात्या)'],
+    ['Shrimant', 'श्रीमंत'],
     ['Sitabai', 'सीताबाई'],
   ])('%s → %s', (en, mr) => {
     expect(toMarathi(en)).toBe(mr);

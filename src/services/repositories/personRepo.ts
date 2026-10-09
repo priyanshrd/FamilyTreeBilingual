@@ -200,3 +200,39 @@ export async function fillMissingNames(familyId: string, people: PersonView[], t
   if (res.error) throw res.error;
   return rows.length;
 }
+
+/** People still marked "unknown parent" although they have been given a name: make them real people. */
+export async function repairNamedPlaceholders(people: PersonView[]): Promise<number> {
+  const ids = people.filter((p) => p.isPlaceholder && Object.values(p.names).some((f) => f.full_name.trim())).map((p) => p.id);
+  if (!ids.length) return 0;
+  const res = await supabase.from('persons').update({ is_placeholder: false }).in('id', ids);
+  if (res.error) throw res.error;
+  return ids.length;
+}
+
+/**
+ * Re-generates automatic names with the current transliteration rules (e.g. after the dictionary
+ * improved). Only touches forms still marked "auto"; names typed or corrected by hand are never changed.
+ */
+export async function refreshAutoNames(people: PersonView[], convert: (text: string, to: Lang) => string): Promise<number> {
+  let changed = 0;
+  for (const p of people) {
+    for (const lang of ['en', 'mr'] as const) {
+      const form = p.names[lang];
+      const from = form?.generated_from as Lang | null | undefined;
+      const source = from ? p.names[from] : undefined;
+      if (!form || form.source !== 'auto' || !source || source.source === 'auto') continue;
+      const text = convert(source.full_name, lang);
+      if (text === form.full_name) continue;
+      const res = await supabase
+        .from('person_name_forms')
+        .update({ ...splitName(text), provider: TRANSLITERATION_PROVIDER })
+        .eq('name_id', p.primaryNameId!)
+        .eq('lang', lang)
+        .eq('source', 'auto');
+      if (res.error) throw res.error;
+      changed++;
+    }
+  }
+  return changed;
+}

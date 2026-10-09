@@ -2,7 +2,7 @@ import { Fragment } from 'react';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
 import { SIMPLE_FACTS } from '@/domain/family/personInput';
 import { getText, type LocalizedText } from '@/domain/localized/localized';
-import { currentFact, displayName, lifespan, type FamilyModel } from '@/domain/family/familyModel';
+import { currentFact, displayName, isUnknown, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { useI18n } from '@/i18n/I18nProvider';
 import type { StringKey } from '@/i18n/strings';
 import { Button } from '@/components/ui/Button';
@@ -64,7 +64,7 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
     >
       <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4">
         <div>
-          <h2 className="text-xl font-semibold">{p.isPlaceholder ? t('person.unknownParent') : displayName(p, lang).text}</h2>
+          <h2 className="text-xl font-semibold">{isUnknown(p) ? t('person.unknownParent') : displayName(p, lang).text}</h2>
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
           {lifespan(p, lang) && <p className="mt-1 text-sm text-stone-500">{lifespan(p, lang)}</p>}
           {meId === personId && <p className="mt-1 inline-block rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800">{t('person.isMe')}</p>}
@@ -133,7 +133,7 @@ function RelativeList({
             <li key={id}>
               <button type="button" onClick={() => onSelect(id)} className="flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left hover:bg-stone-50">
                 <span>
-                  {person?.isPlaceholder ? t('person.unknownParent') : displayName(person, lang).text}
+                  {isUnknown(person) ? t('person.unknownParent') : displayName(person, lang).text}
                   {tag && <span className="ml-2 rounded bg-stone-100 px-1.5 py-0.5 text-xs text-stone-600">{t(tag as StringKey)}</span>}
                 </span>
                 <span className="text-xs text-stone-500">{person ? lifespan(person, lang) : ''}</span>

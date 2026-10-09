@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
-import { displayName, lifespan, type FamilyModel } from '@/domain/family/familyModel';
+import { displayName, isUnknown, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { PERSON_H, PERSON_W, personNodeId, type LaidOutEdge, type TreeLayout } from '@/graph/layout';
 import { useI18n } from '@/i18n/I18nProvider';
 
@@ -91,10 +91,10 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
         type: 'person',
         position: position ?? { x: n.x, y: n.y },
         data: {
-          name: p?.isPlaceholder ? t('person.unknownParent') : name.text,
+          name: isUnknown(p) ? t('person.unknownParent') : name.text,
           years: p ? lifespan(p, lang) : '',
           gender: p?.gender ?? 'unknown',
-          placeholder: Boolean(p?.isPlaceholder),
+          placeholder: isUnknown(p),
           selected: n.id === selectedId,
           fallback: name.isFallback,
           more: Boolean(layout.more?.has(n.id)),
