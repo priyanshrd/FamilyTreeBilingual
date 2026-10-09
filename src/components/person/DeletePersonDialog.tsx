@@ -3,7 +3,7 @@ import { displayName, type PersonView } from '@/domain/family/familyModel';
 import { useI18n } from '@/i18n/I18nProvider';
 import { deleteImpact, softDeletePerson } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
+import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { Loading } from '@/components/ui/Status';
 import { errorMessage } from './AddRelativeDialog';
 
@@ -33,7 +33,7 @@ export function DeletePersonDialog({ person, onClose, onDone }: { person: Person
           {errorMessage(del.error)}
         </p>
       )}
-      <div className="mt-6 flex justify-end gap-2">
+      <div className={DIALOG_ACTIONS_CLASS}>
         <Button variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>

@@ -12,7 +12,7 @@ import { addRelative, connectExisting, saveBirthOrder, type Relation, type Relat
 import { numberRows, placeNewSibling, rowsFromGroup, siblingGroup, type RelativePosition } from '@/domain/family/birthOrder';
 import { Button } from '@/components/ui/Button';
 import { Choice } from '@/components/ui/Choice';
-import { Dialog } from '@/components/ui/Dialog';
+import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { PersonPicker } from '@/components/PersonPicker';
 import { DuplicateWarning, useDuplicates } from './DuplicateWarning';
 import { PersonForm } from './PersonForm';
@@ -126,7 +126,7 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
             submit();
           }}
         >
-          <button type="button" className="text-sm text-amber-800 hover:underline" onClick={() => setStep('choose')}>
+          <button type="button" className="min-h-11 text-sm text-amber-800 hover:underline" onClick={() => setStep('choose')}>
             {t('relative.back')}
           </button>
 
@@ -181,7 +181,7 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
             </p>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className={DIALOG_ACTIONS_CLASS}>
             <Button variant="secondary" onClick={onClose}>
               {t('common.cancel')}
             </Button>

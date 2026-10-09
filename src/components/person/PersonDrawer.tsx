@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
 import { SIMPLE_FACTS } from '@/domain/family/personInput';
 import { siblingGroup } from '@/domain/family/birthOrder';
@@ -23,9 +23,14 @@ type Props = {
   meId?: string | null;
 };
 
+/** Height of the person panel on phones; the tree centres the selected person in the space above it. */
+export const PHONE_SHEET_FRACTION = 0.55;
+const PHONE_SHEET_CLASS = 'max-h-[55dvh]';
+
 /** Profile panel. The graph node stays simple; details live here. */
 export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete, onRelationship, onBirthOrder, meId }: Props) {
   const { t, lang } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   const p = model.persons.get(personId);
   if (!p) return null;
   const g = model.graph;
@@ -65,9 +70,21 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
   return (
     <aside
       aria-label={displayName(p, lang).text}
-      className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-white sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:border-l sm:border-stone-200 sm:shadow-xl"
+      className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-y-auto rounded-t-2xl border-t border-stone-200 bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.12)] sm:top-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-[26rem] sm:rounded-none sm:border-t-0 sm:border-l sm:shadow-xl ${
+        expanded ? 'top-0 rounded-none' : PHONE_SHEET_CLASS
+      }`}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4">
+      {/* phones: the panel is a bottom sheet so the tree stays visible above it; tap the bar for full height */}
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        aria-label={expanded ? t('person.collapse') : t('person.expand')}
+        aria-expanded={expanded}
+        className="flex min-h-6 w-full shrink-0 items-center justify-center pt-2 sm:hidden"
+      >
+        <span className="h-1.5 w-12 rounded-full bg-stone-300" />
+      </button>
+      <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4 pt-1 sm:pt-4">
         <div>
           <h2 className="text-xl font-semibold">{isUnknown(p) ? t('person.unknownParent') : displayName(p, lang).text}</h2>
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
@@ -111,7 +128,7 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
         <RelativeList title={t('person.children')} items={children} model={model} onSelect={onSelect} />
         <RelativeList title={t('person.siblings')} items={siblings} model={model} onSelect={onSelect} />
         {canOrder && (
-          <button type="button" onClick={onBirthOrder} className="text-sm text-amber-800 hover:underline">
+          <button type="button" onClick={onBirthOrder} className="min-h-11 text-sm text-amber-800 hover:underline">
             ⇅ {t('person.birthOrder')}
           </button>
         )}

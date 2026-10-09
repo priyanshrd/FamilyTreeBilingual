@@ -16,6 +16,12 @@ import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { displayName, isUnknown, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { PERSON_H, PERSON_W, personNodeId, type LaidOutEdge, type TreeLayout } from '@/graph/layout';
 import { useI18n } from '@/i18n/I18nProvider';
+import { PHONE_SHEET_FRACTION } from '@/components/person/PersonDrawer';
+
+const isPhone = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
+/** On phones names must stay readable: never shrink the tree below this when fitting it. */
+const PHONE_MIN_FIT_ZOOM = 0.6;
+const PHONE_FOCUS_ZOOM = 0.85;
 
 type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean; more: boolean; highlight: boolean };
 
@@ -65,6 +71,10 @@ function edgeStyle(e: LaidOutEdge): React.CSSProperties {
   return { stroke: '#57534e', strokeWidth: 1.5, strokeDasharray: dash };
 }
 
+function fitOptions() {
+  return { padding: 0.15, maxZoom: 1, minZoom: isPhone() ? PHONE_MIN_FIT_ZOOM : undefined, duration: 300 };
+}
+
 type Props = {
   model: FamilyModel;
   layout: TreeLayout & { more?: Set<string> };
@@ -109,6 +119,19 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
   // Nodes are local state so single boxes can be dragged. A new layout resets positions;
   // a change of selection or language only updates labels and keeps dragged positions.
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+
+  // Centre a person. On phones the person panel covers the lower part of the screen,
+  // so the person is placed in the visible space above it.
+  const focus = useCallback(
+    (id: string, zoom: number): boolean => {
+      const n = layout.nodes.find((x) => x.kind === 'person' && x.id === id);
+      if (!n) return false;
+      const shift = isPhone() && selectedId ? (window.innerHeight * PHONE_SHEET_FRACTION) / 2 / zoom : 0;
+      void flow.setCenter(n.x + n.width / 2, n.y + n.height / 2 + shift, { zoom, duration: 400 });
+      return true;
+    },
+    [layout, flow, selectedId],
+  );
   const lastLayout = useRef<TreeLayout | null>(null);
   useEffect(() => {
     const fresh = lastLayout.current !== layout;
@@ -117,7 +140,8 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
       const kept = fresh ? new Map() : new Map(prev.map((n) => [n.id, n.position]));
       return layout.nodes.map((n) => toNode(n, kept.get(n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id))));
     });
-    if (fresh) requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 300 }));
+    if (fresh) requestAnimationFrame(() => (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM)) || void flow.fitView(fitOptions()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new layout re-fits; selection changes are handled by centerOn
   }, [layout, toNode, setNodes, flow]);
 
   const edges: Edge[] = useMemo(() => {
@@ -191,8 +215,8 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
 
   useEffect(() => {
     if (!centerOn) return;
-    const n = layout.nodes.find((x) => x.kind === 'person' && x.id === centerOn);
-    if (n) void flow.setCenter(n.x + n.width / 2, n.y + n.height / 2, { zoom: Math.max(flow.getZoom(), 0.9), duration: 400 });
+    focus(centerOn, Math.max(flow.getZoom(), isPhone() ? PHONE_FOCUS_ZOOM : 0.9));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when asked to
   }, [centerOn, layout, flow]);
 
   return (
@@ -209,7 +233,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
       nodeTypes={nodeTypes}
       onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
       fitView
-      fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
+      fitViewOptions={fitOptions()}
       minZoom={0.1}
       maxZoom={2}
       nodesConnectable={false}
@@ -220,7 +244,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
       panOnDrag
     >
       <Background gap={24} color="#e7e5e4" />
-      <Controls showInteractive={false} />
+      <Controls showInteractive={false} fitViewOptions={fitOptions()} className="tree-controls" />
     </ReactFlow>
   );
 }

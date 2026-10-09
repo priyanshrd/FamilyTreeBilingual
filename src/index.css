@@ -7,3 +7,13 @@
 body {
   @apply bg-stone-50 text-stone-900 antialiased;
 }
+
+/* tree zoom buttons: finger-sized */
+.tree-controls .react-flow__controls-button {
+  width: 44px;
+  height: 44px;
+}
+.tree-controls .react-flow__controls-button svg {
+  max-width: 16px;
+  max-height: 16px;
+}

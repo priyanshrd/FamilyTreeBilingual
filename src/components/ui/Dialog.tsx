@@ -4,6 +4,8 @@ import { LanguageToggle } from '@/components/LanguageToggle';
 /** Width of the right-hand sidebar; the workspace reserves the same space so the tree stays visible. */
 export const SIDEBAR_WIDTH_CLASS = 'sm:w-[26rem]';
 export const SIDEBAR_RESERVE_CLASS = 'sm:pr-[26rem]';
+/** Save / Cancel row of a form: stays visible at the bottom while the form scrolls (long forms on phones). */
+export const DIALOG_ACTIONS_CLASS = 'sticky bottom-0 z-10 -mx-4 -mb-4 mt-6 flex flex-wrap justify-end gap-2 border-t border-stone-200 bg-white px-4 py-3';
 
 type Props = { title: string; onClose: () => void; children: ReactNode; wide?: boolean };
 

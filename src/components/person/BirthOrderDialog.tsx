@@ -5,7 +5,7 @@ import { displayName, lifespan, type FamilyModel } from '@/domain/family/familyM
 import { useI18n } from '@/i18n/I18nProvider';
 import { saveBirthOrder } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
+import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { errorMessage } from './AddRelativeDialog';
 
 /** Put brothers and sisters in birth order (eldest first) and mark twins. */
@@ -65,7 +65,7 @@ export function BirthOrderDialog({ model, personId, onClose, onDone }: { model: 
         })}
       </ol>
       {save.isError && <p className="mt-3 text-sm text-red-700">{errorMessage(save.error)}</p>}
-      <div className="mt-6 flex justify-end gap-2">
+      <div className={DIALOG_ACTIONS_CLASS}>
         <Button variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>

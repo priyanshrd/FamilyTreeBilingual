@@ -167,7 +167,7 @@ function ResultView({
       {!needsWord && !editing && (
         <button
           type="button"
-          className="text-sm text-amber-800 hover:underline"
+          className="min-h-11 text-sm text-amber-800 hover:underline"
           onClick={() => {
             setMrWord(terms.tables.mr?.[result.key] ?? '');
             setEnWord(terms.tables.en?.[result.key] ?? '');

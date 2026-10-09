@@ -7,7 +7,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
 import { fillMissingNames } from '@/services/repositories/personRepo';
 import { Button } from './ui/Button';
-import { Dialog } from './ui/Dialog';
+import { DIALOG_ACTIONS_CLASS, Dialog } from './ui/Dialog';
 import { TextField } from './ui/TextField';
 import { LanguageToggle } from './LanguageToggle';
 
@@ -60,7 +60,7 @@ export function SettingsDialog({ familyId, model, onClose, onChanged }: Props) {
           </div>
         )}
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-stone-200 pt-4">
+        <div className={DIALOG_ACTIONS_CLASS}>
           <Button variant="ghost" className="mr-auto text-red-700" onClick={() => void signOut()}>
             {t('common.signOut')}
           </Button>

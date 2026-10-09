@@ -17,7 +17,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
 import { createPerson, updatePerson } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
+import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { errorMessage } from './AddRelativeDialog';
 import { hasMoreDetails, PersonForm } from './PersonForm';
 
@@ -77,7 +77,7 @@ export function EditPersonDialog({
           {t('error.title')}: {errorMessage(save.error)}
         </p>
       )}
-      <div className="mt-6 flex justify-end gap-2">
+      <div className={DIALOG_ACTIONS_CLASS}>
         <Button variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>
