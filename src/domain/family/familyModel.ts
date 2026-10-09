@@ -24,6 +24,8 @@ export type PersonView = {
   birth: VitalFact;
   death: VitalFact;
   facts: PersonFactRow[];
+  /** profile photo (storage paths), if any */
+  photo: { mediaId: string; path: string; thumb: string | null } | null;
 };
 
 export type FamilyModel = {
@@ -70,6 +72,13 @@ export function buildFamilyModel(rows: FamilyRows): FamilyModel {
     factsByPerson.set(f.person_id, list);
   }
 
+  const mediaById = new Map((rows.media ?? []).map((m) => [m.id, m]));
+  const photoByPerson = new Map<string, PersonView['photo']>();
+  for (const l of rows.mediaLinks ?? []) {
+    const m = l.role === 'profile' && l.person_id ? mediaById.get(l.media_id) : undefined;
+    if (m) photoByPerson.set(l.person_id!, { mediaId: m.id, path: m.storage_path, thumb: m.thumb_path });
+  }
+
   const persons = new Map<string, PersonView>();
   for (const p of rows.persons) {
     const names = (namesByPerson.get(p.id) ?? []).sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order);
@@ -94,6 +103,7 @@ export function buildFamilyModel(rows: FamilyRows): FamilyModel {
       birth: vital(facts.find((f) => f.fact_type === 'birth')),
       death: vital(facts.find((f) => f.fact_type === 'death')),
       facts,
+      photo: photoByPerson.get(p.id) ?? null,
     });
   }
 

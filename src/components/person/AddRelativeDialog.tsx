@@ -3,7 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { displayName, type FamilyModel } from '@/domain/family/familyModel';
 import { EMPTY_PERSON, validatePersonInput, type InputErrors, type PersonInput } from '@/domain/family/personInput';
 import type { Gender } from '@/domain/genealogy/graph';
-import { fillOtherLanguage } from '@/domain/family/personInput';
+import { fillOtherLanguage, type Lang } from '@/domain/family/personInput';
 import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
@@ -16,6 +16,7 @@ import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { PersonPicker } from '@/components/PersonPicker';
 import { DuplicateWarning, useDuplicates } from './DuplicateWarning';
 import { PersonForm } from './PersonForm';
+import { recordChange } from '@/services/undo';
 
 type Kind = 'father' | 'mother' | 'spouse' | 'son' | 'daughter' | 'brother' | 'sister' | 'adoptiveParent' | 'stepParent';
 
@@ -59,22 +60,29 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
   const duplicates = useDuplicates(model, input, nearby).filter((m) => m.id !== anchorId);
 
   const save = useMutation({
-    mutationFn: async () => {
-      const before = siblingGroup(model.graph, anchorId);
-      const res =
-        step === 'connect'
-          ? await connectExisting(anchorId, otherId!, relation, effectiveOptions)
-          : await addRelative(anchorId, relation, deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input, effectiveOptions);
-      // optional birth order relative to the person they were added from
-      if (relation === 'sibling' && position !== 'unknown') {
-        const parentIds = res.placeholder_id ? [res.placeholder_id] : (effectiveOptions.parent_ids ?? before?.parentIds ?? []);
-        const rows = before ? rowsFromGroup(before) : [{ id: anchorId, twinWithPrevious: false }];
-        await saveBirthOrder(parentIds, numberRows(placeNewSibling(rows, anchorId, res.person_id, position)));
-      }
-      return res.person_id;
-    },
+    mutationFn: () =>
+      recordChange(
+        step === 'connect' ? 'connect' : 'add',
+        step === 'connect' ? displayName(model.persons.get(otherId!), lang).text : (input.name[lang as Lang] || input.name.en || input.name.mr).trim(),
+        saveRelative,
+      ),
     onSuccess: (id) => onDone(id),
   });
+
+  async function saveRelative() {
+    const before = siblingGroup(model.graph, anchorId);
+    const res =
+      step === 'connect'
+        ? await connectExisting(anchorId, otherId!, relation, effectiveOptions)
+        : await addRelative(anchorId, relation, deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input, effectiveOptions);
+    // optional birth order relative to the person they were added from
+    if (relation === 'sibling' && position !== 'unknown') {
+      const parentIds = res.placeholder_id ? [res.placeholder_id] : (effectiveOptions.parent_ids ?? before?.parentIds ?? []);
+      const rows = before ? rowsFromGroup(before) : [{ id: anchorId, twinWithPrevious: false }];
+      await saveBirthOrder(parentIds, numberRows(placeNewSibling(rows, anchorId, res.person_id, position)));
+    }
+    return res.person_id;
+  }
 
   function choose(k: (typeof KINDS)[number]) {
     setKind(k);

@@ -3,9 +3,20 @@ import { currentFact, displayName, lifespan, type FamilyModel } from '@/domain/f
 import { getText } from '@/domain/localized/localized';
 import { searchKey } from '@/domain/text/normalize';
 import { useI18n } from '@/i18n/I18nProvider';
+import { Avatar } from '@/components/ui/Avatar';
 
 /** Everyone in the family as a searchable list (like a directory). Clicking opens them in family view. */
-export function PeopleList({ model, onPick }: { model: FamilyModel; onPick: (id: string) => void }) {
+export function PeopleList({
+  model,
+  onPick,
+  photoUrl,
+  relations,
+}: {
+  model: FamilyModel;
+  onPick: (id: string) => void;
+  photoUrl?: (id: string) => string | undefined;
+  relations?: Map<string, string>;
+}) {
   const { t, lang } = useI18n();
   const [q, setQ] = useState('');
 
@@ -41,7 +52,7 @@ export function PeopleList({ model, onPick }: { model: FamilyModel; onPick: (id:
   const shown = k ? rows.filter((r) => r.keys.includes(k)) : rows;
 
   return (
-    <div className="absolute inset-0 overflow-y-auto px-3 pt-16 pb-6">
+    <div className="absolute inset-0 overflow-y-auto px-3 pt-9 pb-6">
       <input
         type="search"
         value={q}
@@ -55,9 +66,13 @@ export function PeopleList({ model, onPick }: { model: FamilyModel; onPick: (id:
         {shown.map((r) => (
           <li key={r.id}>
             <button type="button" onClick={() => onPick(r.id)} className="grid w-full gap-x-4 px-4 py-3 text-left hover:bg-amber-50 sm:grid-cols-[2fr_1fr_1fr_2fr]">
-              <span>
-                <span className="font-medium">{r.name}</span>
-                {r.other && <span className="block text-sm text-stone-500">{r.other}</span>}
+              <span className="flex items-center gap-3">
+                <Avatar url={photoUrl?.(r.id)} name={r.name} size={36} />
+                <span>
+                  <span className="font-medium">{r.name}</span>
+                  {r.other && <span className="block text-sm text-stone-500">{r.other}</span>}
+                  {relations?.get(r.id) && <span className="block text-xs font-medium text-sky-700">{relations.get(r.id)}</span>}
+                </span>
               </span>
               <span className="text-sm text-stone-600">{r.years}</span>
               <span className="text-sm text-stone-600">{r.place}</span>

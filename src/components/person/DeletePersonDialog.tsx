@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/Button';
 import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { Loading } from '@/components/ui/Status';
 import { errorMessage } from './AddRelativeDialog';
+import { recordChange } from '@/services/undo';
 
 export function DeletePersonDialog({ person, onClose, onDone }: { person: PersonView; onClose: () => void; onDone: () => void }) {
   const { t, lang } = useI18n();
   const name = displayName(person, lang).text;
   const impact = useQuery({ queryKey: ['deleteImpact', person.id], queryFn: () => deleteImpact(person.id), gcTime: 0 });
-  const del = useMutation({ mutationFn: () => softDeletePerson(person.id), onSuccess: onDone });
+  const del = useMutation({ mutationFn: () => recordChange('delete', name, () => softDeletePerson(person.id)), onSuccess: onDone });
 
   return (
     <Dialog title={t('delete.title', { name })} onClose={onClose}>

@@ -23,7 +23,19 @@ const isPhone = () => typeof window !== 'undefined' && window.matchMedia('(max-w
 const PHONE_MIN_FIT_ZOOM = 0.6;
 const PHONE_FOCUS_ZOOM = 0.85;
 
-type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean; more: boolean; highlight: boolean };
+type PersonData = {
+  name: string;
+  years: string;
+  gender: string;
+  placeholder: boolean;
+  selected: boolean;
+  fallback: boolean;
+  more: boolean;
+  highlight: boolean;
+  photo?: string;
+  /** relationship to this device's "me" */
+  relation?: string;
+};
 
 const GENDER_ACCENT: Record<string, string> = {
   male: 'border-l-sky-600',
@@ -36,13 +48,17 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
   return (
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
-      className={`relative flex flex-col justify-center rounded-lg border border-l-4 bg-white px-3 shadow-sm ${GENDER_ACCENT[data.gender]} ${
+      className={`relative flex items-center gap-2 rounded-lg border border-l-4 bg-white px-2.5 shadow-sm ${GENDER_ACCENT[data.gender]} ${
         data.selected ? 'ring-2 ring-amber-700' : data.highlight ? 'bg-sky-50 ring-2 ring-sky-600' : ''
       } ${data.placeholder ? 'border-dashed opacity-70' : 'border-stone-300'}`}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
-      <span className={`truncate text-sm font-medium ${data.fallback ? 'text-stone-500 italic' : 'text-stone-900'}`}>{data.name}</span>
-      {data.years && <span className="truncate text-xs text-stone-500">{data.years}</span>}
+      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-10 shrink-0 rounded-full object-cover" />}
+      <span className="flex min-w-0 flex-col">
+        <span className={`truncate text-sm font-medium ${data.fallback ? 'text-stone-500 italic' : 'text-stone-900'}`}>{data.name}</span>
+        {data.years && <span className="truncate text-xs text-stone-500">{data.years}</span>}
+        {data.relation && <span className="truncate text-xs font-medium text-sky-700">{data.relation}</span>}
+      </span>
       {data.more && (
         <span aria-hidden className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-amber-700 text-xs text-white">
           +
@@ -83,9 +99,13 @@ type Props = {
   highlight?: Set<string>;
   centerOn: string | null;
   onSelect: (id: string) => void;
+  /** profile thumbnail per person */
+  photoUrl?: (personId: string) => string | undefined;
+  /** relationship of each person to this device's "me" */
+  relations?: Map<string, string>;
 };
 
-function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
 
@@ -109,11 +129,13 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Pr
           fallback: name.isFallback,
           more: Boolean(layout.more?.has(n.id)),
           highlight: Boolean(highlight?.has(n.id)),
+          photo: photoUrl?.(n.id),
+          relation: relations?.get(n.id),
         } satisfies PersonData,
         ariaLabel: name.text,
       };
     },
-    [model, lang, t, selectedId, layout.more, highlight],
+    [model, lang, t, selectedId, layout.more, highlight, photoUrl, relations],
   );
 
   // Nodes are local state so single boxes can be dragged. A new layout resets positions;

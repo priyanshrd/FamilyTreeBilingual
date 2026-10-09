@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { TextField } from '@/components/ui/TextField';
 import { errorMessage } from '@/components/person/AddRelativeDialog';
+import { recordChange } from '@/services/undo';
 
 type Props = {
   model: FamilyModel;
@@ -107,8 +108,10 @@ function ResultView({
 
   const save = useMutation({
     mutationFn: async () => {
-      await saveTerm(familyId, terms.rows, result.key, 'mr', mrWord);
-      await saveTerm(familyId, terms.rows, result.key, 'en', enWord);
+      await recordChange('word', mrWord.trim() || enWord.trim(), async () => {
+        await saveTerm(familyId, terms.rows, result.key, 'mr', mrWord);
+        await saveTerm(familyId, terms.rows, result.key, 'en', enWord);
+      });
       await terms.refresh();
     },
     onSuccess: () => setEditing(false),

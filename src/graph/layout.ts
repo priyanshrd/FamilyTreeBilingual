@@ -5,7 +5,7 @@
 import dagre from '@dagrejs/dagre';
 import type { GenealogyGraph, Lineage } from '@/domain/genealogy/graph';
 
-export const PERSON_W = 176;
+export const PERSON_W = 192;
 export const PERSON_H = 64;
 const UNION_SIZE = 10;
 

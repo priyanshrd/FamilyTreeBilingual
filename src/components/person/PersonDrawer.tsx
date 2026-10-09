@@ -1,4 +1,5 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
 import { SIMPLE_FACTS } from '@/domain/family/personInput';
 import { siblingGroup } from '@/domain/family/birthOrder';
@@ -8,6 +9,10 @@ import { useI18n } from '@/i18n/I18nProvider';
 import type { StringKey } from '@/i18n/strings';
 import { Button } from '@/components/ui/Button';
 import { LanguageToggle } from '@/components/LanguageToggle';
+import { Avatar } from '@/components/ui/Avatar';
+import { removeProfilePhoto, setProfilePhoto, usePhotoUrls } from '@/services/repositories/photoRepo';
+import { recordChange } from '@/services/undo';
+import { errorMessage } from './AddRelativeDialog';
 
 type Props = {
   model: FamilyModel;
@@ -21,6 +26,12 @@ type Props = {
   onBirthOrder: () => void;
   /** this device's "me" person, if set */
   meId?: string | null;
+  onToggleMe: () => void;
+  /** how this person is related to "me", e.g. "uncle" */
+  relationToMe?: string;
+  familyId: string;
+  /** after a photo change */
+  onChanged: () => void;
 };
 
 /** Height of the person panel on phones; the tree centres the selected person in the space above it. */
@@ -28,11 +39,34 @@ export const PHONE_SHEET_FRACTION = 0.55;
 const PHONE_SHEET_CLASS = 'max-h-[55dvh]';
 
 /** Profile panel. The graph node stays simple; details live here. */
-export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete, onRelationship, onBirthOrder, meId }: Props) {
+export function PersonDrawer({
+  model,
+  personId,
+  onSelect,
+  onClose,
+  onAddRelative,
+  onEdit,
+  onDelete,
+  onRelationship,
+  onBirthOrder,
+  meId,
+  onToggleMe,
+  relationToMe,
+  familyId,
+  onChanged,
+}: Props) {
   const { t, lang } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const p = model.persons.get(personId);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const photoUrls = usePhotoUrls(p?.photo ? [p.photo.path] : []);
+  const photo = useMutation({
+    mutationFn: ({ file }: { file: File | null }) =>
+      recordChange(file ? 'photo' : 'photoRemove', displayName(p, lang).text, () => (file ? setProfilePhoto(familyId, p!, file) : removeProfilePhoto(p!))),
+    onSuccess: onChanged,
+  });
   if (!p) return null;
+  const unknown = isUnknown(p);
   const g = model.graph;
   const other = lang === 'mr' ? 'en' : 'mr';
 
@@ -80,24 +114,78 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
         onClick={() => setExpanded(!expanded)}
         aria-label={expanded ? t('person.collapse') : t('person.expand')}
         aria-expanded={expanded}
-        className="flex min-h-6 w-full shrink-0 items-center justify-center pt-2 sm:hidden"
+        className="flex min-h-8 w-full shrink-0 items-center justify-center pt-1 sm:hidden"
       >
         <span className="h-1.5 w-12 rounded-full bg-stone-300" />
       </button>
       <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4 pt-1 sm:pt-4">
-        <div>
-          <h2 className="text-xl font-semibold">{isUnknown(p) ? t('person.unknownParent') : displayName(p, lang).text}</h2>
+        {!unknown && (
+          <button
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            disabled={photo.isPending}
+            aria-label={p.photo ? t('photo.change') : t('photo.add')}
+            className="group relative shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-amber-700"
+          >
+            <Avatar url={p.photo ? photoUrls.get(p.photo.path) : null} name={displayName(p, lang).text} size={72} className={photo.isPending ? 'opacity-40' : ''} />
+            <span className="absolute -right-1 -bottom-1 flex size-7 items-center justify-center rounded-full border border-stone-200 bg-white text-sm shadow-sm" aria-hidden>
+              📷
+            </span>
+          </button>
+        )}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          data-testid="photo-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) photo.mutate({ file });
+          }}
+        />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-semibold">{unknown ? t('person.unknownParent') : displayName(p, lang).text}</h2>
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
           {lifespan(p, lang) && <p className="mt-1 text-sm text-stone-500">{lifespan(p, lang)}</p>}
-          {meId === personId && <p className="mt-1 inline-block rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800">{t('person.isMe')}</p>}
+          {meId === personId ? (
+            <p className="mt-1 inline-block rounded bg-sky-100 px-2 py-0.5 text-sm text-sky-800">{t('person.isMe')}</p>
+          ) : (
+            relationToMe && <p className="mt-1 inline-block rounded bg-sky-50 px-2 py-0.5 text-sm text-sky-800">{t('me.relation', { rel: relationToMe })}</p>
+          )}
         </div>
-        <span className="ml-auto sm:hidden">
-          <LanguageToggle compact />
-        </span>
+        {/* the page header (with its language switch) is hidden only when the panel fills the phone screen */}
+        {expanded && (
+          <span className="ml-auto sm:hidden">
+            <LanguageToggle compact />
+          </span>
+        )}
         <button type="button" onClick={onClose} aria-label={t('person.close')} className="-m-1 rounded-lg p-2 text-2xl leading-none text-stone-500 hover:bg-stone-100">
           ×
         </button>
       </div>
+
+      {(photo.isPending || photo.isError || p.photo) && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-stone-200 px-4 py-2 text-sm">
+          {photo.isPending && <span className="text-stone-500">{t('photo.uploading')}</span>}
+          {photo.isError && (
+            <span role="alert" className="text-red-700">
+              {errorMessage(photo.error)}
+            </span>
+          )}
+          {p.photo && !photo.isPending && (
+            <>
+              <button type="button" className="min-h-11 text-amber-800 hover:underline" onClick={() => fileInput.current?.click()}>
+                {t('photo.change')}
+              </button>
+              <button type="button" className="min-h-11 text-red-700 hover:underline" onClick={() => photo.mutate({ file: null })}>
+                {t('photo.remove')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 border-b border-stone-200 p-4">
         <Button onClick={onAddRelative}>{t('person.addRelative')}</Button>
@@ -107,6 +195,11 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
         <Button variant="secondary" onClick={onRelationship}>
           {t('person.relationship')}
         </Button>
+        {!unknown && (
+          <Button variant="secondary" aria-pressed={meId === personId} onClick={onToggleMe} title={t('me.help')}>
+            {meId === personId ? `✓ ${t('me.set')}` : t('me.set')}
+          </Button>
+        )}
         <Button variant="ghost" className="text-red-700" onClick={onDelete}>
           {t('person.delete')}
         </Button>

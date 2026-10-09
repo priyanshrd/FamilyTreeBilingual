@@ -25,6 +25,15 @@ import { RelationshipFinder } from '@/components/relationship/RelationshipFinder
 import { deviceSettings } from '@/services/deviceSettings';
 import { fillMissingNames, refreshAutoNames, repairNamedPlaceholders } from '@/services/repositories/personRepo';
 import { transliterate } from '@/domain/language/transliterate';
+import { BirthdaysDialog, birthdaysOf } from '@/components/BirthdaysDialog';
+import { KinshipResolver } from '@/domain/kinship/resolve';
+import { labelRelationship } from '@/domain/kinship/terms';
+import { toTables } from '@/services/repositories/kinshipRepo';
+import { usePhotoUrls } from '@/services/repositories/photoRepo';
+import { undoLast, useUndoList, type UndoEntry } from '@/services/undo';
+
+/** Toolbar button */
+const TOOL = 'inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1 rounded-md px-2.5 text-amber-800 hover:bg-amber-50 disabled:opacity-50';
 
 /** Above this many people the tree shows the neighbourhood of the selected person by default. */
 const SHOW_ALL_LIMIT = 150;
@@ -32,7 +41,7 @@ const FOCUS_DEPTH = 4;
 
 type View = 'family' | 'tree' | 'list';
 
-type Modal = { kind: 'relationship'; a: string | null; b: string | null } | { kind: 'add' } | { kind: 'order' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
+type Modal = { kind: 'relationship'; a: string | null; b: string | null } | { kind: 'add' } | { kind: 'order' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | { kind: 'birthdays' } | null;
 
 export function WorkspacePage() {
   const { t, lang } = useI18n();
@@ -51,6 +60,72 @@ export function WorkspacePage() {
   const [history, setHistory] = useState<string[]>([]);
   const [highlight, setHighlight] = useState<Set<string> | null>(null);
   const terms = useKinshipTerms(familyId);
+
+  // "me" is remembered per browser (no accounts): it decides the "your uncle" labels
+  const [meVersion, setMeVersion] = useState(0);
+  const meId = useMemo(() => (familyId ? deviceSettings.mePersonId(familyId) : null), [familyId, meVersion, modal]); // eslint-disable-line react-hooks/exhaustive-deps
+  function toggleMe(id: string) {
+    if (!familyId) return;
+    deviceSettings.setMePersonId(familyId, meId === id ? null : id);
+    setMeVersion((v) => v + 1);
+  }
+  const relations = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!model || !meId || !model.persons.has(meId)) return out;
+    const resolver = new KinshipResolver(model.graph);
+    const table = toTables(terms.rows)[lang];
+    for (const p of model.persons.values()) {
+      if (p.isPlaceholder) continue;
+      if (p.id === meId) {
+        out.set(p.id, t('me.you'));
+        continue;
+      }
+      const r = resolver.find(meId, p.id);
+      if (r.kind === 'none') continue;
+      out.set(p.id, labelRelationship(r, lang, table).text);
+    }
+    return out;
+  }, [model, meId, terms.rows, lang, t]);
+
+  const thumbs = useMemo(() => (model ? [...model.persons.values()].flatMap((p) => (p.photo?.thumb ? [p.photo.thumb] : [])) : []), [model]);
+  const photoUrls = usePhotoUrls(thumbs);
+  const photoUrl = useMemo(() => {
+    return (id: string) => {
+      const thumb = model?.persons.get(id)?.photo?.thumb;
+      return thumb ? photoUrls.get(thumb) : undefined;
+    };
+  }, [model, photoUrls]);
+
+  const birthdays = useMemo(() => (model ? birthdaysOf(model) : []), [model]);
+
+  // Undo: the last changes made in this tab; a short message offers Undo after each save.
+  const undoList = useUndoList();
+  const [undoing, setUndoing] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'saved' | 'done'; entry: UndoEntry } | { kind: 'failed'; reason: string } | null>(null);
+  const undoText = (e: UndoEntry) => t(`undo.${e.kind}`, { name: e.name });
+  const lastUndoCount = useRef(undoList.length);
+  useEffect(() => {
+    const last = undoList[undoList.length - 1];
+    if (undoList.length > lastUndoCount.current && last) setToast({ kind: 'saved', entry: last });
+    lastUndoCount.current = undoList.length;
+  }, [undoList]);
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 7000);
+    return () => clearTimeout(id);
+  }, [toast]);
+  async function undo() {
+    setUndoing(true);
+    try {
+      const entry = await undoLast();
+      await Promise.all([refresh(), terms.refresh()]);
+      if (entry) setToast({ kind: 'done', entry });
+    } catch (e) {
+      setToast({ kind: 'failed', reason: (e as Error).message });
+    } finally {
+      setUndoing(false);
+    }
+  }
 
   // Once per visit: tidy data entered before recent fixes (named placeholders, missing or outdated
   // automatic names). Never changes anything typed by hand.
@@ -147,7 +222,7 @@ export function WorkspacePage() {
         </div>
       </header>
 
-      <main className="relative flex-1">
+      <main className="relative flex min-h-0 flex-1 flex-col">
         {(family.isPending || (familyId && modelQuery.isPending)) && <Loading />}
         {(family.isError || modelQuery.isError) && (
           <div className="p-4">
@@ -168,55 +243,90 @@ export function WorkspacePage() {
 
         {model && model.persons.size > 0 && (
           <>
-            {view === 'list' ? (
-              <PeopleList model={model} onPick={(id) => { setView('family'); select(id); }} />
-            ) : (
-              layout && (
-                <TreeCanvas
-                  model={model}
-                  layout={layout}
-                  selectedId={selectedId}
-                  highlight={highlight ?? undefined}
-                  centerOn={centerOn}
-                  onSelect={(id) => select(id)}
-                />
-              )
-            )}
-            <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 rounded-lg bg-white/95 p-1.5 text-sm shadow-sm">
-              <div role="group" aria-label={t('view.label')} className="inline-flex rounded-md border border-stone-200 p-0.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-stone-200 bg-white px-2 py-1.5 text-sm whitespace-nowrap sm:flex-nowrap sm:gap-1.5 sm:overflow-x-auto sm:px-3">
+              <div role="group" aria-label={t('view.label')} className="inline-flex shrink-0 rounded-lg border border-stone-200 p-0.5">
                 {(['family', 'tree', 'list'] as const).map((v) => (
                   <button
                     key={v}
                     type="button"
                     aria-pressed={view === v}
                     onClick={() => setView(v)}
-                    className={`min-h-8 rounded px-2.5 ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
+                    className={`min-h-10 rounded-md px-3 ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
                   >
                     {t(`view.${v}`)}
                   </button>
                 ))}
               </div>
               {view === 'family' && history.length > 0 && (
-                <button type="button" onClick={back} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50">
+                <button type="button" onClick={back} className={TOOL}>
                   {t('view.back')}
                 </button>
               )}
               {highlight && (
-                <button type="button" onClick={() => setHighlight(null)} className="min-h-8 rounded px-2 text-sky-700 hover:bg-sky-50">
+                <button type="button" onClick={() => setHighlight(null)} className={`${TOOL} text-sky-700 hover:bg-sky-50`}>
                   ✕ {t('rel.clearPath')}
                 </button>
               )}
+              <span className="hidden flex-1 sm:block" />
+              {undoList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void undo()}
+                  disabled={undoing}
+                  title={t('undo.title', { what: undoText(undoList[undoList.length - 1]!) })}
+                  className={TOOL}
+                >
+                  <span aria-hidden>↶</span> <span className="max-sm:sr-only">{t('undo.button')}</span>
+                </button>
+              )}
+              <button type="button" onClick={() => setModal({ kind: 'birthdays' })} className={TOOL}>
+                <span aria-hidden>🎂</span> <span className="max-sm:sr-only">{t('birthdays.button')}</span>
+                {birthdays.length > 0 && <span className="rounded-full bg-amber-700 px-1.5 text-xs text-white">{birthdays.length}</span>}
+              </button>
+              <button type="button" onClick={() => setModal({ kind: 'first' })} title={t('toolbar.addPersonHelp')} className={TOOL}>
+                + {t('toolbar.addPerson')}
+              </button>
               {view !== 'list' && (
-                <button type="button" onClick={() => void saveImage()} disabled={exporting} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50 disabled:opacity-50">
-                  ⤓ {exporting ? t('export.saving') : t('export.png')}
+                <button type="button" onClick={() => void saveImage()} disabled={exporting} className={TOOL}>
+                  <span aria-hidden>⤓</span> <span className="max-sm:sr-only">{exporting ? t('export.saving') : t('export.png')}</span>
                 </button>
               )}
-              <span className="px-1 text-stone-500">{t('workspace.count', { count: [...model.persons.values()].filter((p) => !p.isPlaceholder).length })}</span>
-              {view === 'tree' && large && (
-                <button type="button" className="text-amber-800 underline" onClick={() => setShowAll(!everyone)}>
-                  {everyone ? t('workspace.showNearby') : t('workspace.showAll')}
-                </button>
+            </div>
+            <div className="relative min-h-0 flex-1">
+              {view === 'list' ? (
+                <PeopleList
+                  model={model}
+                  photoUrl={photoUrl}
+                  relations={relations}
+                  onPick={(id) => {
+                    setView('family');
+                    select(id);
+                  }}
+                />
+              ) : (
+                layout && (
+                  <TreeCanvas
+                    model={model}
+                    layout={layout}
+                    selectedId={selectedId}
+                    highlight={highlight ?? undefined}
+                    centerOn={centerOn}
+                    onSelect={(id) => select(id)}
+                    photoUrl={photoUrl}
+                    relations={relations}
+                  />
+                )
               )}
+              <div className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-2 text-xs text-stone-500">
+                <span className="rounded bg-white/80 px-1.5 py-0.5">
+                  {t('workspace.count', { count: [...model.persons.values()].filter((p) => !p.isPlaceholder).length })}
+                </span>
+                {view === 'tree' && large && (
+                  <button type="button" className="pointer-events-auto rounded bg-white/80 px-1.5 py-0.5 text-amber-800 underline" onClick={() => setShowAll(!everyone)}>
+                    {everyone ? t('workspace.showNearby') : t('workspace.showAll')}
+                  </button>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -235,7 +345,11 @@ export function WorkspacePage() {
               const me = familyId ? deviceSettings.mePersonId(familyId) : null;
               setModal({ kind: 'relationship', a: me && me !== selectedId ? me : null, b: selectedId });
             }}
-            meId={familyId ? deviceSettings.mePersonId(familyId) : null}
+            meId={meId}
+            onToggleMe={() => toggleMe(selectedId)}
+            relationToMe={selectedId !== meId ? relations.get(selectedId) : undefined}
+            familyId={familyId!}
+            onChanged={() => void refresh()}
           />
         )}
       </main>
@@ -256,6 +370,17 @@ export function WorkspacePage() {
             setView('tree');
             const last = ids[ids.length - 1];
             if (last) setCenterOn(last);
+          }}
+        />
+      )}
+      {model && modal?.kind === 'birthdays' && (
+        <BirthdaysDialog
+          model={model}
+          photoUrl={photoUrl}
+          onClose={() => setModal(null)}
+          onPick={(id) => {
+            setModal(null);
+            select(id, true);
           }}
         />
       )}
@@ -285,6 +410,26 @@ export function WorkspacePage() {
             void afterChange();
           }}
         />
+      )}
+      {toast && (
+        <div
+          role="status"
+          className={`fixed top-2 left-1/2 z-[60] flex w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-3 rounded-xl bg-stone-900 py-2 pr-2 pl-4 text-sm text-white shadow-lg sm:top-auto sm:bottom-4 ${
+            panelOpen ? 'sm:-ml-[13rem]' : ''
+          }`}
+        >
+          <span className="truncate">
+            {toast.kind === 'failed' ? t('undo.failed', { reason: toast.reason }) : t(`undo.${toast.kind}`, { what: undoText(toast.entry) })}
+          </span>
+          {toast.kind === 'saved' && undoList.at(-1)?.id === toast.entry.id && (
+            <button type="button" onClick={() => void undo()} disabled={undoing} className="min-h-10 shrink-0 rounded-lg px-3 font-semibold text-amber-300 hover:bg-white/10">
+              ↶ {t('undo.button')}
+            </button>
+          )}
+          <button type="button" onClick={() => setToast(null)} aria-label={t('person.close')} className="min-h-10 shrink-0 rounded-lg px-2 text-stone-400 hover:bg-white/10">
+            ×
+          </button>
+        </div>
       )}
     </div>
   );

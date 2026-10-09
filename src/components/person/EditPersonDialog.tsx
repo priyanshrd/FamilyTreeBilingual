@@ -11,7 +11,7 @@ import {
   type InputErrors,
   type PersonInput,
 } from '@/domain/family/personInput';
-import { fillOtherLanguage } from '@/domain/family/personInput';
+import { fillOtherLanguage, type Lang } from '@/domain/family/personInput';
 import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { errorMessage } from './AddRelativeDialog';
 import { hasMoreDetails, PersonForm } from './PersonForm';
+import { recordChange } from '@/services/undo';
 
 export function toInput(p: PersonView): PersonInput {
   const forms = (f: Record<string, { full_name: string }> | undefined): Bi => ({ en: f?.en?.full_name ?? '', mr: f?.mr?.full_name ?? '' });
@@ -60,11 +61,12 @@ export function EditPersonDialog({
   const save = useMutation({
     mutationFn: async () => {
       const toSave = deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input;
+      const label = (toSave.name[lang as Lang] || toSave.name.en || toSave.name.mr).trim();
       if (person) {
-        await updatePerson(familyId, person, toSave);
+        await recordChange('edit', label, () => updatePerson(familyId, person, toSave));
         return person.id;
       }
-      return createPerson(familyId, toSave);
+      return recordChange('addPerson', label, () => createPerson(familyId, toSave));
     },
     onSuccess: onDone,
   });

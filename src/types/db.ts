@@ -91,6 +91,9 @@ export type ParentChildRow = {
   child_order: number | null;
 };
 
+export type MediaRow = { id: string; storage_path: string; thumb_path: string | null };
+export type MediaLinkRow = { id: string; media_id: string; person_id: string | null; role: 'profile' | 'tagged' | 'attachment' };
+
 export type FamilyRows = {
   persons: PersonRow[];
   names: PersonNameRow[];
@@ -99,4 +102,6 @@ export type FamilyRows = {
   unions: UnionRow[];
   partners: UnionPartnerRow[];
   parentChild: ParentChildRow[];
+  media: MediaRow[];
+  mediaLinks: MediaLinkRow[];
 };

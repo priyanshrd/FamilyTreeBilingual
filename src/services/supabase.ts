@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { deviceSettings } from './deviceSettings';
+import { operationContext } from './operationContext';
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
@@ -9,13 +10,16 @@ export const isConfigured = Boolean(url && key && FAMILY_LOGIN_EMAIL);
 
 /**
  * Adds the device's editor name to every request, so the audit log can say who made a change
- * even though the family shares one login. (Header values must be ASCII-safe, so it is URI-encoded.)
+ * even though the family shares one login (URI-encoded: header values must be ASCII-safe),
+ * and the id of the change being saved, so it can be undone as a whole (see undo.ts).
  */
 const fetchWithEditor: typeof fetch = (input, init) => {
   const name = deviceSettings.editorName();
-  if (!name) return fetch(input, init);
+  const op = operationContext.get();
+  if (!name && !op) return fetch(input, init);
   const headers = new Headers(init?.headers);
-  headers.set('x-editor-name', encodeURIComponent(name));
+  if (name) headers.set('x-editor-name', encodeURIComponent(name));
+  if (op) headers.set('x-operation-id', op);
   return fetch(input, { ...init, headers });
 };
 

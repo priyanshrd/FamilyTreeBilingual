@@ -7,6 +7,7 @@ import { saveBirthOrder } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
 import { DIALOG_ACTIONS_CLASS, Dialog } from '@/components/ui/Dialog';
 import { errorMessage } from './AddRelativeDialog';
+import { recordChange } from '@/services/undo';
 
 /** Put brothers and sisters in birth order (eldest first) and mark twins. */
 export function BirthOrderDialog({ model, personId, onClose, onDone }: { model: FamilyModel; personId: string; onClose: () => void; onDone: () => void }) {
@@ -15,7 +16,7 @@ export function BirthOrderDialog({ model, personId, onClose, onDone }: { model: 
   const [rows, setRows] = useState<OrderRow[]>(() => (group ? rowsFromGroup(group) : []));
 
   const save = useMutation({
-    mutationFn: () => saveBirthOrder(group!.parentIds, numberRows(rows)),
+    mutationFn: () => recordChange('order', displayName(model.persons.get(personId), lang).text, () => saveBirthOrder(group!.parentIds, numberRows(rows))),
     onSuccess: onDone,
   });
 

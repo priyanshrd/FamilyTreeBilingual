@@ -1748,4 +1748,149 @@ alter type public.fact_type add value if not exists 'gotra';
 alter type public.fact_type add value if not exists 'kuldaivat';
 
 insert into supabase_migrations.schema_migrations (version, name) values ('20261009000100', 'more_person_facts') on conflict (version) do nothing;
+
+-- ======================================================================
+-- 20261010000100_undo
+-- ======================================================================
+-- Undo. Each change the app makes is tagged with an operation id (header "x-operation-id"),
+-- which the audit trigger records. undo_operation() reverses every audited row change of one
+-- operation, newest first, in one transaction:
+--   insert      -> soft delete (tables with deleted_at) or delete (pure link tables)
+--   update      -> the changed columns get their old values back (this also undoes soft deletes)
+--   delete      -> the row is inserted again
+-- If anything touched the same rows afterwards, nothing is undone (it would overwrite newer work).
+-- All relationship rules still apply, so an undo that would break the tree fails as a whole.
+
+alter table public.audit_log add column op_id uuid;
+create index audit_log_op_idx on public.audit_log (op_id) where op_id is not null;
+
+create function private.request_operation_id() returns uuid
+language plpgsql stable as $$
+begin
+  return nullif(current_setting('request.headers', true)::json ->> 'x-operation-id', '')::uuid;
+exception when others then
+  return null;
+end;
+$$;
+
+create or replace function private.audit_row() returns trigger
+language plpgsql security definer set search_path = '' as $$
+declare
+  o jsonb := case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end;
+  n jsonb := case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end;
+  r jsonb := coalesce(n, o);
+  k jsonb := '{}'::jsonb;
+  col text;
+  old_diff jsonb := '{}'::jsonb;
+  new_diff jsonb := '{}'::jsonb;
+  act text := lower(tg_op);
+  fid uuid;
+begin
+  foreach col in array tg_argv loop
+    k := k || jsonb_build_object(col, r -> col);
+  end loop;
+  fid := coalesce((r ->> 'family_id')::uuid, case when tg_table_name = 'families' then (r ->> 'id')::uuid end);
+
+  if tg_op = 'UPDATE' then
+    for col in select jsonb_object_keys(n) loop
+      if col not in ('updated_at', 'updated_by', 'search_key') and (n -> col) is distinct from (o -> col) then
+        old_diff := old_diff || jsonb_build_object(col, o -> col);
+        new_diff := new_diff || jsonb_build_object(col, n -> col);
+      end if;
+    end loop;
+    if new_diff = '{}'::jsonb then
+      return null;
+    end if;
+    if new_diff ? 'deleted_at' then
+      act := case when n ->> 'deleted_at' is null then 'restore' else 'soft_delete' end;
+    end if;
+    o := old_diff;
+    n := new_diff;
+  end if;
+
+  insert into public.audit_log (family_id, table_name, row_key, action, actor_id, actor_label, old_values, new_values, op_id)
+  values (fid, tg_table_name, k, act, auth.uid(), private.request_editor_label(), o, n, private.request_operation_id());
+  return null;
+end;
+$$;
+
+-- Columns of a table that can be written (not generated).
+create function private.writable_columns(tbl text) returns text[]
+language sql stable set search_path = '' as $$
+  select array_agg(a.attname::text order by a.attnum)
+  from pg_catalog.pg_attribute a
+  where a.attrelid = ('public.' || quote_ident(tbl))::regclass
+    and a.attnum > 0 and not a.attisdropped and a.attgenerated = '' and a.attidentity = '';
+$$;
+
+create function public.undo_operation(p_op uuid)
+returns jsonb
+language plpgsql set search_path = '' as $$
+declare
+  fid uuid;
+  e record;
+  cols text[];
+  keys text[];
+  match text;
+  match_key text;
+  sets text;
+  n int := 0;
+begin
+  select family_id into fid from public.audit_log where op_id = p_op limit 1;
+  if fid is null then
+    raise exception 'Nothing to undo' using errcode = 'P0001';
+  end if;
+  perform private.require_family_role(fid, 'editor');
+  perform private.lock_family_graph(fid);
+
+  if exists (
+    select 1
+    from public.audit_log l
+    join public.audit_log later
+      on later.table_name = l.table_name and later.row_key = l.row_key and later.id > l.id
+    where l.op_id = p_op and later.op_id is distinct from p_op
+  ) then
+    raise exception 'This was changed again afterwards, so it cannot be undone' using errcode = 'P0001';
+  end if;
+
+  for e in select * from public.audit_log where op_id = p_op order by id desc loop
+    cols := private.writable_columns(e.table_name);
+    select array_agg(k) into keys from jsonb_object_keys(e.row_key) k;
+    select string_agg(format('t.%I = r.%I', k, k), ' and '), string_agg(format('t.%I = k.%I', k, k), ' and ')
+      into match, match_key from unnest(keys) k;
+
+    if e.action = 'insert' then
+      if 'deleted_at' = any (cols) then
+        execute format('update public.%I t set deleted_at = now() from jsonb_populate_record(null::public.%I, $1) r where %s and t.deleted_at is null',
+                       e.table_name, e.table_name, match)
+          using e.row_key;
+      else
+        execute format('delete from public.%I t using jsonb_populate_record(null::public.%I, $1) r where %s',
+                       e.table_name, e.table_name, match)
+          using e.row_key;
+      end if;
+    elsif e.action = 'delete' then
+      select string_agg(quote_ident(c), ', ') into sets from unnest(cols) c where e.old_values ? c;
+      execute format('insert into public.%I (%s) select %s from jsonb_populate_record(null::public.%I, $1) on conflict do nothing',
+                     e.table_name, sets, sets, e.table_name)
+        using e.old_values;
+    else -- update / soft_delete / restore: put the changed columns back
+      select string_agg(format('%I = r.%I', c, c), ', ') into sets from unnest(cols) c where e.old_values ? c;
+      if sets is not null then
+        execute format('update public.%I t set %s from jsonb_populate_record(null::public.%I, $1) r, jsonb_populate_record(null::public.%I, $2) k where %s',
+                       e.table_name, sets, e.table_name, e.table_name, match_key)
+          using e.old_values, e.row_key;
+      end if;
+    end if;
+    n := n + 1;
+  end loop;
+
+  return jsonb_build_object('undone', n);
+end;
+$$;
+
+revoke all on function public.undo_operation(uuid) from public, anon;
+grant execute on function public.undo_operation(uuid) to authenticated;
+
+insert into supabase_migrations.schema_migrations (version, name) values ('20261010000100', 'undo') on conflict (version) do nothing;
 commit;
