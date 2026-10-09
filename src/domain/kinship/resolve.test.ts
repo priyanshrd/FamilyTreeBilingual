@@ -138,6 +138,10 @@ describe('findRelationship', () => {
     expect(labelRelationship(r, 'mr').text).toBe('सावत्र वडील');
   });
 
+  it('does not list detours through marriages as alternatives for blood relatives', () => {
+    expect(rel('gf', 'son').alternatives).toEqual([]);
+  });
+
   it('handles multiple spouses', () => {
     expect(rel('f', 'm').english).toBe('wife');
     expect(rel('f', 'f1w').english).toBe('wife');

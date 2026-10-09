@@ -19,6 +19,8 @@ import { neighbourhood } from '@/graph/projection';
 import { PeopleList } from '@/components/PeopleList';
 import { useFamily, useFamilyModel, useRefreshFamily } from '@/hooks/useFamily';
 import { useI18n } from '@/i18n/I18nProvider';
+import { useKinshipTerms } from '@/hooks/useKinshipTerms';
+import { RelationshipFinder } from '@/components/relationship/RelationshipFinder';
 import { deviceSettings } from '@/services/deviceSettings';
 import { fillMissingNames } from '@/services/repositories/personRepo';
 import { transliterate } from '@/domain/language/transliterate';
@@ -29,7 +31,7 @@ const FOCUS_DEPTH = 4;
 
 type View = 'family' | 'tree' | 'list';
 
-type Modal = { kind: 'add' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
+type Modal = { kind: 'relationship'; a: string | null; b: string | null } | { kind: 'add' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
 
 export function WorkspacePage() {
   const { t, lang } = useI18n();
@@ -46,6 +48,8 @@ export function WorkspacePage() {
   const [view, setView] = useState<View>('family');
   const [focus, setFocus] = useState<string | null>(null);
   const [history, setHistory] = useState<string[]>([]);
+  const [highlight, setHighlight] = useState<Set<string> | null>(null);
+  const terms = useKinshipTerms(familyId);
 
   // People entered before auto-fill existed: fill their missing Marathi / English names once.
   const backfilled = useRef(false);
@@ -161,7 +165,16 @@ export function WorkspacePage() {
             {view === 'list' ? (
               <PeopleList model={model} onPick={(id) => { setView('family'); select(id); }} />
             ) : (
-              layout && <TreeCanvas model={model} layout={layout} selectedId={selectedId} centerOn={centerOn} onSelect={(id) => select(id)} />
+              layout && (
+                <TreeCanvas
+                  model={model}
+                  layout={layout}
+                  selectedId={selectedId}
+                  highlight={highlight ?? undefined}
+                  centerOn={centerOn}
+                  onSelect={(id) => select(id)}
+                />
+              )
             )}
             <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 rounded-lg bg-white/95 p-1.5 text-sm shadow-sm">
               <div role="group" aria-label={t('view.label')} className="inline-flex rounded-md border border-stone-200 p-0.5">
@@ -180,6 +193,11 @@ export function WorkspacePage() {
               {view === 'family' && history.length > 0 && (
                 <button type="button" onClick={back} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50">
                   {t('view.back')}
+                </button>
+              )}
+              {highlight && (
+                <button type="button" onClick={() => setHighlight(null)} className="min-h-8 rounded px-2 text-sky-700 hover:bg-sky-50">
+                  ✕ {t('rel.clearPath')}
                 </button>
               )}
               {view !== 'list' && (
@@ -206,10 +224,31 @@ export function WorkspacePage() {
             onAddRelative={() => setModal({ kind: 'add' })}
             onEdit={() => setModal({ kind: 'edit' })}
             onDelete={() => setModal({ kind: 'delete' })}
+            onRelationship={() => {
+              const me = familyId ? deviceSettings.mePersonId(familyId) : null;
+              setModal({ kind: 'relationship', a: me && me !== selectedId ? me : null, b: selectedId });
+            }}
+            meId={familyId ? deviceSettings.mePersonId(familyId) : null}
           />
         )}
       </main>
 
+      {model && familyId && modal?.kind === 'relationship' && (
+        <RelationshipFinder
+          model={model}
+          familyId={familyId}
+          initialA={modal.a}
+          initialB={modal.b}
+          terms={terms}
+          onClose={() => setModal(null)}
+          onShowPath={(ids) => {
+            setHighlight(new Set(ids));
+            setView('tree');
+            const last = ids[ids.length - 1];
+            if (last) setCenterOn(last);
+          }}
+        />
+      )}
       {modal?.kind === 'settings' && (
         <SettingsDialog familyId={familyId} model={model} onClose={() => setModal(null)} onChanged={() => void refresh()} />
       )}

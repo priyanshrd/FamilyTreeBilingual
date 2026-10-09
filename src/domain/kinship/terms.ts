@@ -166,3 +166,9 @@ export function dictionaryRows(overridesByLang: Record<string, TermTable> = {}) 
     ),
   }));
 }
+
+/** Word for one step of a path ("M" → "आई" / "mother", "eB" → "दादा (मोठा भाऊ)" / "elder brother"). */
+export function stepWord(code: string, lang: string, overrides: TermTable = {}): string {
+  if (lang === 'mr') return lookupTerm(code, 'mr', overrides)?.text ?? MARATHI_STEP_WORDS[code.replace(/^[ey]/, '')] ?? code;
+  return overrides[code] ?? describeKey(code);
+}

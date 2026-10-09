@@ -92,6 +92,8 @@ export class KinshipResolver {
     const [primary, ...rest] = [...byKey.values()];
     const alternatives = rest
       .filter((c) => c.distance <= primary!.distance + 3)
+      // for a blood relative, routes through marriages are just detours (e.g. "son's wife's son")
+      .filter((c) => primary!.kind !== 'blood' || c.kind === 'blood')
       .slice(0, 5)
       .map((c) => ({ ...strip(c), alternatives: [] }));
     return { ...strip(primary!), alternatives };

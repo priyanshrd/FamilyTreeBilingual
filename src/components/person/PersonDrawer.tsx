@@ -16,10 +16,13 @@ type Props = {
   onAddRelative: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onRelationship: () => void;
+  /** this device's "me" person, if set */
+  meId?: string | null;
 };
 
 /** Profile panel. The graph node stays simple; details live here. */
-export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete }: Props) {
+export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete, onRelationship, meId }: Props) {
   const { t, lang } = useI18n();
   const p = model.persons.get(personId);
   if (!p) return null;
@@ -64,6 +67,7 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
           <h2 className="text-xl font-semibold">{p.isPlaceholder ? t('person.unknownParent') : displayName(p, lang).text}</h2>
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
           {lifespan(p, lang) && <p className="mt-1 text-sm text-stone-500">{lifespan(p, lang)}</p>}
+          {meId === personId && <p className="mt-1 inline-block rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800">{t('person.isMe')}</p>}
         </div>
         <span className="ml-auto sm:hidden">
           <LanguageToggle compact />
@@ -77,6 +81,9 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
         <Button onClick={onAddRelative}>{t('person.addRelative')}</Button>
         <Button variant="secondary" onClick={onEdit}>
           {t('person.edit')}
+        </Button>
+        <Button variant="secondary" onClick={onRelationship}>
+          {t('person.relationship')}
         </Button>
         <Button variant="ghost" className="text-red-700" onClick={onDelete}>
           {t('person.delete')}

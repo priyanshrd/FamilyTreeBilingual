@@ -17,7 +17,7 @@ import { displayName, lifespan, type FamilyModel } from '@/domain/family/familyM
 import { PERSON_H, PERSON_W, personNodeId, type LaidOutEdge, type TreeLayout } from '@/graph/layout';
 import { useI18n } from '@/i18n/I18nProvider';
 
-type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean; more: boolean };
+type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean; more: boolean; highlight: boolean };
 
 const GENDER_ACCENT: Record<string, string> = {
   male: 'border-l-sky-600',
@@ -31,7 +31,7 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
       className={`relative flex flex-col justify-center rounded-lg border border-l-4 bg-white px-3 shadow-sm ${GENDER_ACCENT[data.gender]} ${
-        data.selected ? 'ring-2 ring-amber-700' : ''
+        data.selected ? 'ring-2 ring-amber-700' : data.highlight ? 'bg-sky-50 ring-2 ring-sky-600' : ''
       } ${data.placeholder ? 'border-dashed opacity-70' : 'border-stone-300'}`}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
@@ -69,11 +69,13 @@ type Props = {
   model: FamilyModel;
   layout: TreeLayout & { more?: Set<string> };
   selectedId: string | null;
+  /** people on a relationship path, highlighted together with the lines between them */
+  highlight?: Set<string>;
   centerOn: string | null;
   onSelect: (id: string) => void;
 };
 
-function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
 
@@ -96,11 +98,12 @@ function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
           selected: n.id === selectedId,
           fallback: name.isFallback,
           more: Boolean(layout.more?.has(n.id)),
+          highlight: Boolean(highlight?.has(n.id)),
         } satisfies PersonData,
         ariaLabel: name.text,
       };
     },
-    [model, lang, t, selectedId, layout.more],
+    [model, lang, t, selectedId, layout.more, highlight],
   );
 
   // Nodes are local state so single boxes can be dragged. A new layout resets positions;
@@ -117,18 +120,32 @@ function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
     if (fresh) requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 300 }));
   }, [layout, toNode, setNodes, flow]);
 
-  const edges: Edge[] = useMemo(
-    () =>
-      layout.edges.map((e) => ({
+  const edges: Edge[] = useMemo(() => {
+    // a line is on the path if both people it joins are; a family-unit dot counts as the people it joins
+    const viaDot = new Map<string, string[]>();
+    for (const e of layout.edges) {
+      for (const [dot, other] of [
+        [e.target, e.source],
+        [e.source, e.target],
+      ] as const) {
+        if (dot.startsWith('u:') && other.startsWith('p:')) viaDot.set(dot, [...(viaDot.get(dot) ?? []), other.slice(2)]);
+      }
+    }
+    const onPath = (nodeId: string) =>
+      nodeId.startsWith('p:') ? Boolean(highlight?.has(nodeId.slice(2))) : (viaDot.get(nodeId) ?? []).filter((p) => highlight?.has(p)).length >= 2;
+    return layout.edges.map((e) => {
+      const hot = Boolean(highlight?.size) && onPath(e.source) && onPath(e.target);
+      return {
         id: e.id,
         source: e.source,
         target: e.target,
         type: e.kind === 'partner' ? 'straight' : 'smoothstep',
-        style: edgeStyle(e),
+        style: hot ? { ...edgeStyle(e), stroke: '#0284c7', strokeWidth: 3 } : edgeStyle(e),
+        zIndex: hot ? 1 : 0,
         selectable: false,
-      })),
-    [layout],
-  );
+      };
+    });
+  }, [layout, highlight]);
 
   // Dragging a box carries everything drawn below it: its family-unit dots, children,
   // grandchildren and so on. (A spouse joined through a dot stays where it is.)
