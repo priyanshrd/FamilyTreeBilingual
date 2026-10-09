@@ -19,7 +19,42 @@ const fetchWithEditor: typeof fetch = (input, init) => {
   return fetch(input, { ...init, headers });
 };
 
+/**
+ * The login lasts for this browser session only: closing the browser (or the tab) means the family
+ * password is asked again on the next visit. A refresh inside the same tab stays signed in.
+ */
+const sessionStore = {
+  getItem: (k: string) => {
+    try {
+      return sessionStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  },
+  setItem: (k: string, v: string) => {
+    try {
+      sessionStorage.setItem(k, v);
+    } catch {
+      // storage unavailable: the login simply isn't remembered
+    }
+  },
+  removeItem: (k: string) => {
+    try {
+      sessionStorage.removeItem(k);
+    } catch {
+      // ignore
+    }
+  },
+};
+
+// Earlier versions kept the login in localStorage (signed in "forever"); remove it once.
+try {
+  for (const k of Object.keys(localStorage)) if (k.startsWith('sb-') && k.endsWith('-auth-token')) localStorage.removeItem(k);
+} catch {
+  // ignore
+}
+
 export const supabase = createClient(url ?? 'http://localhost', key ?? 'missing-key', {
-  auth: { persistSession: true, autoRefreshToken: true },
+  auth: { persistSession: true, autoRefreshToken: true, storage: sessionStore },
   global: { fetch: fetchWithEditor },
 });

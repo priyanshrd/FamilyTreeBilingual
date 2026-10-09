@@ -5,18 +5,19 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useNodesState,
   useReactFlow,
   type Edge,
   type Node,
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { displayName, lifespan, type FamilyModel } from '@/domain/family/familyModel';
-import { layoutTree, PERSON_H, PERSON_W, personNodeId, type LaidOutEdge } from '@/graph/layout';
+import { PERSON_H, PERSON_W, personNodeId, type LaidOutEdge, type TreeLayout } from '@/graph/layout';
 import { useI18n } from '@/i18n/I18nProvider';
 
-type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean };
+type PersonData = { name: string; years: string; gender: string; placeholder: boolean; selected: boolean; fallback: boolean; more: boolean };
 
 const GENDER_ACCENT: Record<string, string> = {
   male: 'border-l-sky-600',
@@ -29,13 +30,18 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
   return (
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
-      className={`flex flex-col justify-center rounded-lg border border-l-4 bg-white px-3 shadow-sm ${GENDER_ACCENT[data.gender]} ${
+      className={`relative flex flex-col justify-center rounded-lg border border-l-4 bg-white px-3 shadow-sm ${GENDER_ACCENT[data.gender]} ${
         data.selected ? 'ring-2 ring-amber-700' : ''
       } ${data.placeholder ? 'border-dashed opacity-70' : 'border-stone-300'}`}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
       <span className={`truncate text-sm font-medium ${data.fallback ? 'text-stone-500 italic' : 'text-stone-900'}`}>{data.name}</span>
       {data.years && <span className="truncate text-xs text-stone-500">{data.years}</span>}
+      {data.more && (
+        <span aria-hidden className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-amber-700 text-xs text-white">
+          +
+        </span>
+      )}
       <Handle type="source" position={Position.Bottom} className="!invisible" />
     </div>
   );
@@ -61,41 +67,55 @@ function edgeStyle(e: LaidOutEdge): React.CSSProperties {
 
 type Props = {
   model: FamilyModel;
-  visible: Set<string>;
+  layout: TreeLayout & { more?: Set<string> };
   selectedId: string | null;
   centerOn: string | null;
   onSelect: (id: string) => void;
 };
 
-function Canvas({ model, visible, selectedId, centerOn, onSelect }: Props) {
+function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
   const { lang, t } = useI18n();
-  const layout = useMemo(() => layoutTree(model.graph, visible), [model, visible]);
+  const flow = useReactFlow();
 
-  const nodes: Node[] = useMemo(
-    () =>
-      layout.nodes.map((n) => {
-        if (n.kind === 'union') {
-          return { id: `u:${n.id}`, type: 'union', position: { x: n.x, y: n.y }, data: {}, draggable: false, selectable: false };
-        }
-        const p = model.persons.get(n.id);
-        const name = displayName(p, lang);
-        return {
-          id: personNodeId(n.id),
-          type: 'person',
-          position: { x: n.x, y: n.y },
-          data: {
-            name: p?.isPlaceholder ? t('person.unknownParent') : name.text,
-            years: p ? lifespan(p, lang) : '',
-            gender: p?.gender ?? 'unknown',
-            placeholder: Boolean(p?.isPlaceholder),
-            selected: n.id === selectedId,
-            fallback: name.isFallback,
-          } satisfies PersonData,
-          ariaLabel: name.text,
-        };
-      }),
-    [layout, model, lang, selectedId, t],
+  const toNode = useCallback(
+    (n: TreeLayout['nodes'][number], position?: { x: number; y: number }): Node => {
+      if (n.kind === 'union') {
+        return { id: `u:${n.id}`, type: 'union', position: position ?? { x: n.x, y: n.y }, data: {}, draggable: false, selectable: false };
+      }
+      const p = model.persons.get(n.id);
+      const name = displayName(p, lang);
+      return {
+        id: personNodeId(n.id),
+        type: 'person',
+        position: position ?? { x: n.x, y: n.y },
+        data: {
+          name: p?.isPlaceholder ? t('person.unknownParent') : name.text,
+          years: p ? lifespan(p, lang) : '',
+          gender: p?.gender ?? 'unknown',
+          placeholder: Boolean(p?.isPlaceholder),
+          selected: n.id === selectedId,
+          fallback: name.isFallback,
+          more: Boolean(layout.more?.has(n.id)),
+        } satisfies PersonData,
+        ariaLabel: name.text,
+      };
+    },
+    [model, lang, t, selectedId, layout.more],
   );
+
+  // Nodes are local state so single boxes can be dragged. A new layout resets positions;
+  // a change of selection or language only updates labels and keeps dragged positions.
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const lastLayout = useRef<TreeLayout | null>(null);
+  useEffect(() => {
+    const fresh = lastLayout.current !== layout;
+    lastLayout.current = layout;
+    setNodes((prev) => {
+      const kept = fresh ? new Map() : new Map(prev.map((n) => [n.id, n.position]));
+      return layout.nodes.map((n) => toNode(n, kept.get(n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id))));
+    });
+    if (fresh) requestAnimationFrame(() => void flow.fitView({ padding: 0.15, maxZoom: 1, duration: 300 }));
+  }, [layout, toNode, setNodes, flow]);
 
   const edges: Edge[] = useMemo(
     () =>
@@ -110,7 +130,6 @@ function Canvas({ model, visible, selectedId, centerOn, onSelect }: Props) {
     [layout],
   );
 
-  const flow = useReactFlow();
   useEffect(() => {
     if (!centerOn) return;
     const n = layout.nodes.find((x) => x.kind === 'person' && x.id === centerOn);
@@ -121,13 +140,19 @@ function Canvas({ model, visible, selectedId, centerOn, onSelect }: Props) {
     <ReactFlow
       nodes={nodes}
       edges={edges}
+      onNodesChange={onNodesChange}
       nodeTypes={nodeTypes}
       onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
       fitView
-      fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+      fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
       minZoom={0.1}
       maxZoom={2}
       nodesConnectable={false}
+      // scroll / two-finger swipe moves the tree; pinch or Ctrl+scroll zooms; drag the background to pan
+      panOnScroll
+      zoomOnScroll={false}
+      zoomOnPinch
+      panOnDrag
     >
       <Background gap={24} color="#e7e5e4" />
       <Controls showInteractive={false} />

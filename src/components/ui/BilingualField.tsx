@@ -2,6 +2,7 @@ import { useId } from 'react';
 import { isAuto, type Bi } from '@/domain/family/personInput';
 import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
+import { deviceSettings } from '@/services/deviceSettings';
 
 type Props = {
   label: string;
@@ -28,6 +29,17 @@ export function BilingualField({ label, value, onChange, placeholder, required, 
     const text = transliterate(value[from].trim(), to);
     onChange({ ...value, [to]: text, auto: { ...value.auto, [to]: text } });
   };
+  // Typing a name/place in one language fills the other box live, unless that box was typed by hand.
+  const liveUpdate = (lang: 'en' | 'mr', text: string): Bi => {
+    const next: Bi = { ...value, [lang]: text };
+    const to = lang === 'mr' ? 'en' : 'mr';
+    if (transliterable && deviceSettings.autoFill() && (!value[to].trim() || isAuto(value, to))) {
+      const generated = text.trim() ? transliterate(text.trim(), to) : '';
+      next[to] = generated;
+      next.auto = { ...value.auto, [to]: generated };
+    }
+    return next;
+  };
   const canFill = (to: 'en' | 'mr') => transliterable && !value[to].trim() && value[to === 'mr' ? 'en' : 'mr'].trim() !== '';
   const errorId = `${id}-error`;
   return (
@@ -45,7 +57,7 @@ export function BilingualField({ label, value, onChange, placeholder, required, 
             placeholder: placeholder?.[lang],
             'aria-label': `${label} — ${TAGS[lang]}`,
             'aria-invalid': error ? true : undefined,
-            onChange: (e: { target: { value: string } }) => onChange({ ...value, [lang]: e.target.value }),
+            onChange: (e: { target: { value: string } }) => onChange(liveUpdate(lang, e.target.value)),
             className:
               'block w-full rounded-r-lg border border-stone-300 bg-white px-3 text-base text-stone-900 placeholder:text-stone-400 focus:border-amber-700 focus:ring-2 focus:ring-amber-700/30 focus:outline-none',
           };

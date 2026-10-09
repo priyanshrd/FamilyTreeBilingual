@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AddRelativeDialog } from '@/components/person/AddRelativeDialog';
 import { DeletePersonDialog } from '@/components/person/DeletePersonDialog';
 import { EditPersonDialog } from '@/components/person/EditPersonDialog';
@@ -12,14 +12,21 @@ import { SIDEBAR_RESERVE_CLASS } from '@/components/ui/Dialog';
 import { ErrorMessage, Loading } from '@/components/ui/Status';
 import type { FamilyModel } from '@/domain/family/familyModel';
 import { getText } from '@/domain/localized/localized';
+import { familyViewLayout } from '@/graph/familyView';
+import { layoutTree } from '@/graph/layout';
 import { neighbourhood } from '@/graph/projection';
+import { PeopleList } from '@/components/PeopleList';
 import { useFamily, useFamilyModel, useRefreshFamily } from '@/hooks/useFamily';
 import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
+import { fillMissingNames } from '@/services/repositories/personRepo';
+import { transliterate } from '@/domain/language/transliterate';
 
 /** Above this many people the tree shows the neighbourhood of the selected person by default. */
 const SHOW_ALL_LIMIT = 150;
 const FOCUS_DEPTH = 4;
+
+type View = 'family' | 'tree' | 'list';
 
 type Modal = { kind: 'add' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
 
@@ -35,9 +42,27 @@ export function WorkspacePage() {
   const [centerOn, setCenterOn] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [showAll, setShowAll] = useState<boolean | null>(null);
+  const [view, setView] = useState<View>('family');
+  const [focus, setFocus] = useState<string | null>(null);
+  const [history, setHistory] = useState<string[]>([]);
+
+  // People entered before auto-fill existed: fill their missing Marathi / English names once.
+  const backfilled = useRef(false);
+  useEffect(() => {
+    if (!model || !familyId || backfilled.current || !deviceSettings.autoFill()) return;
+    backfilled.current = true;
+    const people = [...model.persons.values()];
+    void (async () => {
+      const filled = (await fillMissingNames(familyId, people, 'mr', transliterate)) + (await fillMissingNames(familyId, people, 'en', transliterate));
+      if (filled) await refresh();
+    })().catch(() => {
+      backfilled.current = false;
+    });
+  }, [model, familyId, refresh]);
 
   const lastId = familyId ? deviceSettings.lastPersonId(familyId) : null;
-  const focusId = selectedId ?? (lastId && model?.persons.has(lastId) ? lastId : model ? firstPerson(model) : null);
+  const fallbackFocus = lastId && model?.persons.has(lastId) ? lastId : model ? firstPerson(model) : null;
+  const focusId = (focus && model?.persons.has(focus) ? focus : null) ?? (selectedId && model?.persons.has(selectedId) ? selectedId : null) ?? fallbackFocus;
   const large = (model?.persons.size ?? 0) > SHOW_ALL_LIMIT;
   const everyone = showAll ?? !large;
 
@@ -47,10 +72,27 @@ export function WorkspacePage() {
     return neighbourhood(model.graph, focusId, FOCUS_DEPTH);
   }, [model, everyone, focusId]);
 
+  const layout = useMemo(() => {
+    if (!model || !focusId || view === 'list') return null;
+    return view === 'family' ? familyViewLayout(model.graph, focusId) : layoutTree(model.graph, visible);
+  }, [model, focusId, view, visible]);
+
+  /** Select a person. In family view they also become the centre of the chart (with Back history). */
   function select(id: string, center = false) {
     setSelectedId(id);
     if (familyId) deviceSettings.setLastPersonId(familyId, id);
-    if (center) setCenterOn(id);
+    if (view === 'family') {
+      if (focusId && focusId !== id) setHistory((h) => [...h.slice(-49), focusId]);
+      setFocus(id);
+    } else if (center) setCenterOn(id);
+  }
+
+  function back() {
+    const prev = history[history.length - 1];
+    if (!prev) return;
+    setHistory((h) => h.slice(0, -1));
+    setFocus(prev);
+    setSelectedId(prev);
   }
 
   async function afterChange(id?: string) {
@@ -99,10 +141,32 @@ export function WorkspacePage() {
 
         {model && model.persons.size > 0 && (
           <>
-            <TreeCanvas model={model} visible={visible} selectedId={selectedId} centerOn={centerOn} onSelect={(id) => select(id)} />
-            <div className="absolute top-3 left-3 flex items-center gap-2 rounded-lg bg-white/90 px-3 py-1.5 text-sm shadow-sm">
-              <span className="text-stone-600">{t('workspace.count', { count: [...model.persons.values()].filter((p) => !p.isPlaceholder).length })}</span>
-              {large && (
+            {view === 'list' ? (
+              <PeopleList model={model} onPick={(id) => { setView('family'); select(id); }} />
+            ) : (
+              layout && <TreeCanvas model={model} layout={layout} selectedId={selectedId} centerOn={centerOn} onSelect={(id) => select(id)} />
+            )}
+            <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-2 rounded-lg bg-white/95 p-1.5 text-sm shadow-sm">
+              <div role="group" aria-label={t('view.label')} className="inline-flex rounded-md border border-stone-200 p-0.5">
+                {(['family', 'tree', 'list'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={view === v}
+                    onClick={() => setView(v)}
+                    className={`min-h-8 rounded px-2.5 ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
+                  >
+                    {t(`view.${v}`)}
+                  </button>
+                ))}
+              </div>
+              {view === 'family' && history.length > 0 && (
+                <button type="button" onClick={back} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50">
+                  {t('view.back')}
+                </button>
+              )}
+              <span className="px-1 text-stone-500">{t('workspace.count', { count: [...model.persons.values()].filter((p) => !p.isPlaceholder).length })}</span>
+              {view === 'tree' && large && (
                 <button type="button" className="text-amber-800 underline" onClick={() => setShowAll(!everyone)}>
                   {everyone ? t('workspace.showNearby') : t('workspace.showAll')}
                 </button>
