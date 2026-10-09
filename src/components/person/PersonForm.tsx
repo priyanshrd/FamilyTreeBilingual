@@ -15,7 +15,7 @@ type Props = {
   detailsOpen?: boolean;
 };
 
-const NAME_EXAMPLE: Bi = { mr: 'उदा. राजीव शंकर धोतर', en: 'e.g. Rajiv Shankar Dhotar' };
+const NAME_EXAMPLE: Bi = { mr: 'नाव  वडिलांचे/पतीचे नाव  आडनाव', en: 'First name  Middle name  Surname' };
 
 export function PersonForm({ value, onChange, errors, detailsOpen }: Props) {
   const { t, lang } = useI18n();

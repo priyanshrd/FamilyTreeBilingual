@@ -5,6 +5,7 @@ import {
   EMPTY_BI,
   effectiveLiving,
   isAuto,
+  isBlank,
   TRANSLITERATION_PROVIDER,
   type Lang,
   parsedDate,
@@ -71,6 +72,12 @@ export async function updatePerson(familyId: string, person: PersonView, input: 
   await saveName(familyId, person.id, 'primary', person.primaryNameId, person.names, input.name);
   await saveName(familyId, person.id, 'alias', person.otherNames.alias?.id ?? null, person.otherNames.alias?.forms ?? {}, input.nickname);
   await saveName(familyId, person.id, 'birth', person.otherNames.birth?.id ?? null, person.otherNames.birth?.forms ?? {}, input.maidenName);
+
+  // An "unknown parent" that has been given a name is now a real, searchable person.
+  if (person.isPlaceholder && !isBlank(input.name)) {
+    const res = await supabase.from('persons').update({ is_placeholder: false }).eq('id', person.id);
+    if (res.error) throw res.error;
+  }
 
   const death = input.isLiving === true ? { date: '', place: EMPTY_BI } : { date: input.death, place: input.deathPlace };
   await saveFact(familyId, person.id, 'birth', currentFact(person, 'birth'), {

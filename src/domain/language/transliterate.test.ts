@@ -22,6 +22,9 @@ describe('English → Marathi', () => {
     ['Ashok', 'अशोक'],
     ['Bhushan', 'भूषण'],
     ['Gautam', 'गौतम'],
+    ['Ratnabai Patil', 'रत्नाबाई पाटील'],
+    ['Ganpatrao', 'गणपतराव'],
+    ['Sitabai', 'सीताबाई'],
   ])('%s → %s', (en, mr) => {
     expect(toMarathi(en)).toBe(mr);
   });

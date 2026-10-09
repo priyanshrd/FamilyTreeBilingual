@@ -23,7 +23,7 @@ const DICTIONARY: string[][] = [
   ['Govind', 'गोविंद'], ['Hari', 'हरी'], ['Jayant', 'जयंत'], ['Kamal', 'कमल'], ['Kamala', 'Kamla', 'कमला'], ['Leela', 'Lila', 'लीला'],
   ['Mohan', 'मोहन'], ['Manohar', 'मनोहर'], ['Nanda', 'नंदा'], ['Neha', 'नेहा'], ['Omkar', 'ओंकार'], ['Pallavi', 'पल्लवी'],
   ['Pratibha', 'प्रतिभा'], ['Rekha', 'रेखा'], ['Revati', 'रेवती'], ['Sakharam', 'सखाराम'], ['Shalini', 'शालिनी'], ['Shubham', 'शुभम'],
-  ['Swati', 'स्वाती'], ['Raju', 'राजू'], ['Sujata', 'सुजाता'], ['Bhushan', 'भूषण'], ['Ravi', 'रवी'], ['Sagar', 'सागर'], ['Rani', 'राणी'], ['Uday', 'उदय'], ['Vaishali', 'वैशाली'], ['Vinod', 'विनोद'], ['Yashwant', 'यशवंत'], ['Yogesh', 'योगेश'],
+  ['Swati', 'स्वाती'], ['Raju', 'राजू'], ['Ganpat', 'Ganapat', 'गणपत'], ['Sita', 'Seeta', 'सीता'], ['Ratna', 'रत्ना'], ['Sujata', 'सुजाता'], ['Bhushan', 'भूषण'], ['Ravi', 'रवी'], ['Sagar', 'सागर'], ['Rani', 'राणी'], ['Uday', 'उदय'], ['Vaishali', 'वैशाली'], ['Vinod', 'विनोद'], ['Yashwant', 'यशवंत'], ['Yogesh', 'योगेश'],
   // honorifics and kinship words used in names
   ['Rao', 'राव'], ['Bai', 'बाई'], ['Saheb', 'साहेब'], ['Bhau', 'भाऊ'], ['Tai', 'ताई'], ['Aai', 'आई'], ['Baba', 'बाबा'], ['Kaka', 'काका'],
   ['Mama', 'मामा'], ['Mavshi', 'मावशी'], ['Aatya', 'Atya', 'आत्या'], ['Aaji', 'Aji', 'आजी'], ['Ajoba', 'Aajoba', 'आजोबा'],
@@ -96,10 +96,18 @@ function tokenizeLatin(word: string): Unit[] {
   return units;
 }
 
+/** Name endings written as separate words in Marathi: Ratnabai → रत्ना + बाई, Ganpatrao → गणपत + राव. */
+const SUFFIXES: [string, string][] = [
+  ['bai', 'बाई'], ['rao', 'राव'], ['saheb', 'साहेब'], ['tai', 'ताई'], ['kaka', 'काका'], ['bhau', 'भाऊ'], ['dada', 'दादा'],
+];
+
 function latinWordToDeva(word: string): string {
   const lower = word.toLowerCase();
   const known = LATIN_TO_DEVA.get(lower);
   if (known) return known;
+  for (const [suffix, deva] of SUFFIXES) {
+    if (lower.endsWith(suffix) && lower.length - suffix.length >= 3) return latinWordToDeva(lower.slice(0, -suffix.length)) + deva;
+  }
   const units = tokenizeLatin(lower);
   let out = '';
   for (let i = 0; i < units.length; i++) {
