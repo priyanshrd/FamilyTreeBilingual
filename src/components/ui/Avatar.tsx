@@ -2,9 +2,9 @@
 export function Avatar({ url, name, size = 40, className = '' }: { url?: string | null; name: string; size?: number; className?: string }) {
   const initials = name
     .split(/\s+/)
+    .map((w) => w.match(/\p{L}[\p{M}]*/u)?.[0] ?? '')
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => [...w][0])
     .join('');
   return url ? (
     <img src={url} alt="" width={size} height={size} style={{ width: size, height: size }} className={`shrink-0 rounded-full object-cover ${className}`} draggable={false} />

@@ -19,9 +19,10 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { PHONE_SHEET_FRACTION } from '@/components/person/PersonDrawer';
 
 const isPhone = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
-/** On phones names must stay readable: never shrink the tree below this when fitting it. */
-const PHONE_MIN_FIT_ZOOM = 0.6;
+/** Names must stay readable: fitting the tree never shrinks it below this; a bigger tree is centred on the chosen person instead. */
+const MIN_FIT_ZOOM = 0.85;
 const PHONE_FOCUS_ZOOM = 0.85;
+const FOCUS_ZOOM = 0.9;
 
 type PersonData = {
   name: string;
@@ -41,23 +42,24 @@ const GENDER_ACCENT: Record<string, string> = {
   male: 'border-l-sky-600',
   female: 'border-l-rose-500',
   other: 'border-l-violet-500',
-  unknown: 'border-l-stone-400',
+  unknown: 'border-l-stone-300',
 };
 
 const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>>) {
   return (
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
-      className={`relative flex items-center gap-2 rounded-lg border border-l-4 bg-white px-2.5 shadow-sm ${GENDER_ACCENT[data.gender]} ${
+      title={data.name}
+      className={`relative flex items-center gap-2.5 rounded-lg border border-l-[6px] bg-white px-2.5 shadow-sm ${GENDER_ACCENT[data.gender]} ${
         data.selected ? 'ring-2 ring-amber-700' : data.highlight ? 'bg-sky-50 ring-2 ring-sky-600' : ''
-      } ${data.placeholder ? 'border-dashed opacity-70' : 'border-stone-300'}`}
+      } ${data.placeholder ? 'border-2 border-dashed border-stone-400 bg-stone-50' : 'border-stone-300'}`}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
-      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-10 shrink-0 rounded-full object-cover" />}
+      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-12 shrink-0 rounded-full object-cover" />}
       <span className="flex min-w-0 flex-col">
-        <span className={`truncate text-sm font-medium ${data.fallback ? 'text-stone-500 italic' : 'text-stone-900'}`}>{data.name}</span>
-        {data.years && <span className="truncate text-xs text-stone-500">{data.years}</span>}
-        {data.relation && <span className="truncate text-xs font-medium text-sky-700">{data.relation}</span>}
+        <span className={`line-clamp-2 text-base leading-tight font-medium ${data.fallback ? 'text-stone-600 italic' : 'text-stone-900'}`}>{data.name}</span>
+        {data.years && <span className="truncate text-sm text-stone-600">{data.years}</span>}
+        {data.relation && <span className="truncate text-sm font-medium text-sky-800">{data.relation}</span>}
       </span>
       {data.more && (
         <span aria-hidden className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-amber-700 text-xs text-white">
@@ -88,7 +90,7 @@ function edgeStyle(e: LaidOutEdge): React.CSSProperties {
 }
 
 function fitOptions() {
-  return { padding: 0.15, maxZoom: 1, minZoom: isPhone() ? PHONE_MIN_FIT_ZOOM : undefined, duration: 300 };
+  return { padding: 0.15, maxZoom: 1, minZoom: MIN_FIT_ZOOM, duration: 300 };
 }
 
 type Props = {
@@ -98,6 +100,8 @@ type Props = {
   /** people on a relationship path, highlighted together with the lines between them */
   highlight?: Set<string>;
   centerOn: string | null;
+  /** the person the view is built around (centred when the tree is too big to fit) */
+  focusId?: string | null;
   onSelect: (id: string) => void;
   /** profile thumbnail per person */
   photoUrl?: (personId: string) => string | undefined;
@@ -105,7 +109,7 @@ type Props = {
   relations?: Map<string, string>;
 };
 
-function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect, photoUrl, relations }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSelect, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
 
@@ -162,7 +166,14 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect, phot
       const kept = fresh ? new Map() : new Map(prev.map((n) => [n.id, n.position]));
       return layout.nodes.map((n) => toNode(n, kept.get(n.kind === 'union' ? `u:${n.id}` : personNodeId(n.id))));
     });
-    if (fresh) requestAnimationFrame(() => (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM)) || void flow.fitView(fitOptions()));
+    if (fresh)
+      requestAnimationFrame(async () => {
+        if (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM)) return;
+        await flow.fitView(fitOptions());
+        // too big to fit readably: show the chosen person rather than the middle of the tree
+        const anchor = selectedId ?? focusId;
+        if (anchor && flow.getZoom() <= MIN_FIT_ZOOM + 0.01) focus(anchor, Math.max(flow.getZoom(), FOCUS_ZOOM));
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new layout re-fits; selection changes are handled by centerOn
   }, [layout, toNode, setNodes, flow]);
 
@@ -241,33 +252,55 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, onSelect, phot
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when asked to
   }, [centerOn, layout, flow]);
 
+  // When a person is picked on a larger screen, the side panel narrows the tree; if their box
+  // ends up hidden or cut off, slide the tree so it is fully visible (zoom unchanged).
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selectedId || isPhone()) return;
+    const t = setTimeout(() => {
+      const n = flow.getNode(personNodeId(selectedId));
+      const box = wrapper.current?.getBoundingClientRect();
+      if (!n || !box) return;
+      const { x, y, zoom } = flow.getViewport();
+      const left = n.position.x * zoom + x;
+      const top = n.position.y * zoom + y;
+      const margin = 24;
+      if (left < margin || top < margin || left + PERSON_W * zoom > box.width - margin || top + PERSON_H * zoom > box.height - margin) {
+        void flow.setCenter(n.position.x + PERSON_W / 2, n.position.y + PERSON_H / 2, { zoom, duration: 300 });
+      }
+    }, 350); // after the panel's slide-in
+    return () => clearTimeout(t);
+  }, [selectedId, flow]);
+
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onNodeDragStart={onNodeDragStart}
-      onNodeDrag={onNodeDrag}
-      onNodeDragStop={(e, node) => {
-        onNodeDrag(e, node);
-        dragStart.current = null;
-      }}
-      nodeTypes={nodeTypes}
-      onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
-      fitView
-      fitViewOptions={fitOptions()}
-      minZoom={0.1}
-      maxZoom={2}
-      nodesConnectable={false}
-      // scroll / two-finger swipe moves the tree; pinch or Ctrl+scroll zooms; drag the background to pan
-      panOnScroll
-      zoomOnScroll={false}
-      zoomOnPinch
-      panOnDrag
-    >
-      <Background gap={24} color="#e7e5e4" />
-      <Controls showInteractive={false} fitViewOptions={fitOptions()} className="tree-controls" />
-    </ReactFlow>
+    <div ref={wrapper} className="absolute inset-0">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDrag={onNodeDrag}
+        onNodeDragStop={(e, node) => {
+          onNodeDrag(e, node);
+          dragStart.current = null;
+        }}
+        nodeTypes={nodeTypes}
+        onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
+        fitView
+        fitViewOptions={fitOptions()}
+        minZoom={0.1}
+        maxZoom={2}
+        nodesConnectable={false}
+        // scroll / two-finger swipe moves the tree; pinch or Ctrl+scroll zooms; drag the background to pan
+        panOnScroll
+        zoomOnScroll={false}
+        zoomOnPinch
+        panOnDrag
+      >
+        <Background gap={24} color="#e7e5e4" />
+        <Controls showInteractive={false} fitViewOptions={fitOptions()} className="tree-controls" />
+      </ReactFlow>
+    </div>
   );
 }
 

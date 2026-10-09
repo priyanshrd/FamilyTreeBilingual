@@ -144,10 +144,9 @@ export function labelRelationship(result: KinshipResult, lang: string, overrides
   let label: RelationshipLabel;
   if (found) label = found;
   else if (lang === 'mr') {
-    const text = result.steps.map((s) => MARATHI_STEP_WORDS[s.code.replace(/^[ey]/, '')] ?? s.code).join(' → ');
-    label = { text, matchedKey: null, source: 'generated' };
+    label = { text: composeMarathi(result.steps.map((s) => s.code), overrides), matchedKey: null, source: 'generated' };
   } else {
-    label = { text: humanizeEnglishId(result.english), matchedKey: null, source: 'generated' };
+    label = { text: plainEnglish(result), matchedKey: null, source: 'generated' };
   }
 
   // Qualifiers only when the matched term does not already encode them.
@@ -177,4 +176,109 @@ export function dictionaryRows(overridesByLang: Record<string, TermTable> = {}) 
 export function stepWord(code: string, lang: string, overrides: TermTable = {}): string {
   if (lang === 'mr') return lookupTerm(code, 'mr', overrides)?.text ?? MARATHI_STEP_WORDS[code.replace(/^[ey]/, '')] ?? code;
   return overrides[code] ?? describeKey(code);
+}
+
+// ---------------------------------------------------------------------------
+// Plain-language labels for relationships that have no single word
+// ---------------------------------------------------------------------------
+
+const GEN: Record<string, number> = { F: 1, M: 1, P: 1, S: -1, D: -1, C: -1 };
+const genOf = (codes: string[]) => codes.reduce((g, c) => g + (GEN[stripAgeLetter(c)] ?? 0), 0);
+const stripAgeLetter = (c: string) => c.replace(/^[ey](?=B|Z|Sib)/, '');
+const genderOf = (code: string): 'm' | 'f' | 'n' => {
+  const c = stripAgeLetter(code);
+  return ['F', 'B', 'S', 'H'].includes(c) ? 'm' : ['M', 'Z', 'D', 'W'].includes(c) ? 'f' : 'n';
+};
+
+/**
+ * English without genealogists' jargon: "first cousin once removed" becomes "mother's cousin" or
+ * "cousin's daughter"; "first cousin" is just "cousin".
+ */
+function plainEnglish(result: KinshipResult): string {
+  const c = result.cousin;
+  if (!c || result.kind !== 'blood' || !result.generations) return humanizeEnglishId(result.english);
+  const ordinal = result.english.split('_cousin')[0]!;
+  const cousin = `${result.half ? 'half-' : ''}${c.degree === 1 ? 'cousin' : `${ordinal} cousin`}`;
+  if (c.removed === 0) return cousin;
+  const codes = result.steps.map((s) => s.code);
+  if (result.generations.up > result.generations.down) {
+    // they are older: "mother's cousin", "father's mother's cousin"
+    const chain = codes.slice(0, c.removed).map((code) => ({ F: 'father', M: 'mother' })[code] ?? 'parent');
+    return `${chain.join("'s ")}'s ${cousin}`;
+  }
+  // they are younger: "cousin's daughter", "cousin's grandson"
+  const g = genderOf(codes[codes.length - 1]!);
+  const child = g === 'm' ? 'son' : g === 'f' ? 'daughter' : 'child';
+  const word = c.removed === 1 ? child : `${'great-'.repeat(c.removed - 2)}grand${child}`;
+  return `${cousin}'s ${word}`;
+}
+
+/** Marathi oblique (possessor) form of a term: भाऊ → भावा, बहीण → बहिणी, काका → काकां. */
+function marathiOblique(term: string, elder: boolean): string {
+  const words = term.replace(/\s*\(.*?\)\s*/g, ' ').trim().split(/\s+/);
+  const last = words.pop()!;
+  const adjectives = words.map((w) => (w.endsWith('े') ? `${w.slice(0, -1)}्या` : w));
+  const special: [string, string][] = [
+    ['भाऊ', 'भावा'],
+    ['बहीण', 'बहिणी'],
+    ['मुलगा', 'मुला'],
+    ['मुलगी', 'मुली'],
+    ['नातू', 'नातवा'],
+    ['नात', 'नाती'],
+    ['वडील', 'वडिलां'],
+    ['सासरे', 'सासऱ्यां'],
+    ['जावई', 'जावया'],
+    ['सून', 'सुने'],
+    ['दीर', 'दिरा'],
+    ['नणंद', 'नणंदे'],
+    ['भावंड', 'भावंडा'],
+    ['अपत्य', 'अपत्या'],
+  ];
+  let out = last;
+  const hit = special.find(([from]) => last.endsWith(from));
+  if (hit) out = last.slice(0, -hit[0].length) + hit[1];
+  else if (last.endsWith('ा') && elder) out = `${last}ं`;
+  else if (last.endsWith('ा') && !last.endsWith('्या') && !last.endsWith('या') && !elder) out = `${last.slice(0, -1)}्या`;
+  return [...adjectives, out].join(' ');
+}
+
+/**
+ * Marathi phrase for a path with no single term, built from dictionary words through the closest
+ * relatives: "आईचा मावसभाऊ", "चुलत बहिणीची मुलगी", "वडिलांच्या चुलत भावाचा मुलगा".
+ */
+export function composeMarathi(codes: string[], overrides: TermTable = {}): string {
+  const term = (part: string[]) => lookupTerm(part.join('.'), 'mr', overrides)?.text ?? (part.length === 1 ? MARATHI_STEP_WORDS[stripAgeLetter(part[0]!)] : undefined);
+  // fewest pieces first; then the people in between as close to "me" in generation as possible
+  type Plan = { pieces: string[][]; cost: [number, number] };
+  const memo = new Map<number, Plan | null>();
+  const plan = (from: number): Plan | null => {
+    if (from === codes.length) return { pieces: [], cost: [0, 0] };
+    if (memo.has(from)) return memo.get(from)!;
+    let best: Plan | null = null;
+    for (let to = codes.length; to > from; to--) {
+      const piece = codes.slice(from, to);
+      if (!term(piece)) continue;
+      const rest = plan(to);
+      if (!rest) continue;
+      const junction = to < codes.length ? Math.abs(genOf(codes.slice(0, to))) : 0;
+      const cost: [number, number] = [rest.cost[0] + 1, rest.cost[1] + junction];
+      if (!best || cost[0] < best.cost[0] || (cost[0] === best.cost[0] && cost[1] < best.cost[1])) best = { pieces: [piece, ...rest.pieces], cost };
+    }
+    memo.set(from, best);
+    return best;
+  };
+  const p = plan(0);
+  if (!p) return codes.map((c) => MARATHI_STEP_WORDS[stripAgeLetter(c)] ?? c).join(' → ');
+  const words = p.pieces.map((piece) => term(piece)!);
+  if (words.length === 1) return words[0]!;
+  const parts: string[] = [];
+  for (let i = 0; i < words.length - 1; i++) {
+    const elder = genOf(p.pieces[i]!) > 0;
+    const next = p.pieces[i + 1]!;
+    const suffix =
+      i < words.length - 2 ? 'च्या' : genderOf(next[next.length - 1]!) === 'f' ? 'ची' : genderOf(next[next.length - 1]!) === 'm' && genOf(next) <= 0 ? 'चा' : 'चे';
+    parts.push(`${marathiOblique(words[i]!, elder)}${suffix}`);
+  }
+  const last = words[words.length - 1]!.replace(/\s*\(.*?\)\s*/g, ' ').trim();
+  return `${parts.join(' ')} ${last}`;
 }

@@ -12,7 +12,7 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
           type="button"
           aria-pressed={lang === l}
           onClick={() => setLang(l)}
-          className={`${compact ? 'min-h-8 px-2 text-xs' : 'min-h-9 px-3 text-sm'} rounded-md ${lang === l ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
+          className={`${compact ? 'min-h-10 px-2.5 text-sm' : 'min-h-10 px-3 text-sm'} rounded-md ${lang === l ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
         >
           {LABELS[l]}
         </button>

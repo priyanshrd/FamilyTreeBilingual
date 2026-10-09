@@ -104,7 +104,7 @@ export function PersonDrawer({
   return (
     <aside
       aria-label={displayName(p, lang).text}
-      className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-y-auto rounded-t-2xl border-t border-stone-200 bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.12)] sm:top-0 sm:right-0 sm:left-auto sm:max-h-none sm:w-[26rem] sm:rounded-none sm:border-t-0 sm:border-l sm:shadow-xl ${
+      className={`fixed inset-x-0 bottom-0 z-40 flex flex-col overflow-y-auto rounded-t-2xl border-t border-stone-200 bg-white shadow-[0_-8px_24px_rgba(0,0,0,0.12)] sm:top-[var(--header-h,0px)] sm:right-0 sm:left-auto sm:max-h-none sm:w-[26rem] sm:rounded-none sm:border-t-0 sm:border-l sm:shadow-xl ${
         expanded ? 'top-0 rounded-none' : PHONE_SHEET_CLASS
       }`}
     >
@@ -114,9 +114,9 @@ export function PersonDrawer({
         onClick={() => setExpanded(!expanded)}
         aria-label={expanded ? t('person.collapse') : t('person.expand')}
         aria-expanded={expanded}
-        className="flex min-h-8 w-full shrink-0 items-center justify-center pt-1 sm:hidden"
+        className="flex min-h-11 w-full shrink-0 items-center justify-center sm:hidden"
       >
-        <span className="h-1.5 w-12 rounded-full bg-stone-300" />
+        <span className="h-1.5 w-14 rounded-full bg-stone-400" />
       </button>
       <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4 pt-1 sm:pt-4">
         {!unknown && (
@@ -161,7 +161,7 @@ export function PersonDrawer({
             <LanguageToggle compact />
           </span>
         )}
-        <button type="button" onClick={onClose} aria-label={t('person.close')} className="-m-1 rounded-lg p-2 text-2xl leading-none text-stone-500 hover:bg-stone-100">
+        <button type="button" onClick={onClose} aria-label={t('person.close')} className="-m-1 flex size-11 shrink-0 items-center justify-center rounded-lg text-2xl leading-none text-stone-500 hover:bg-stone-100">
           ×
         </button>
       </div>

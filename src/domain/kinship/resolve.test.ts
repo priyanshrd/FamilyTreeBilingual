@@ -33,7 +33,7 @@ const CASES: Row[] = [
   ['me', 'fz',     'F.yZ', 'paternal_aunt', 'blood', 'paternal aunt', 'आत्या'],
   ['me', 'mb',     'M.yB', 'maternal_uncle', 'blood', 'maternal uncle', 'मामा'],
   ['me', 'mz',     'M.eZ', 'maternal_aunt', 'blood', 'maternal aunt', 'मावशी'],
-  ['me', 'shankar','M.M.yB', 'maternal_grand_uncle', 'blood', 'maternal grand uncle', 'आई → आई → भाऊ'],
+  ['me', 'shankar','M.M.yB', 'maternal_grand_uncle', 'blood', 'maternal grand uncle', 'आईचे मामा'],
   // uncles and aunts by marriage
   ['me', 'fbw',    'F.eB.W', 'paternal_aunt_by_marriage', 'affinal', 'paternal aunt by marriage', 'काकू'],
   ['me', 'fzh',    'F.yZ.H', 'paternal_uncle_by_marriage', 'affinal', 'paternal uncle by marriage', 'आतोबा'],
@@ -42,16 +42,16 @@ const CASES: Row[] = [
   // nephews and nieces
   ['me', 'zs',     'eZ.S', 'nephew', 'blood', 'nephew', 'भाचा'],
   ['me', 'bys',    'yB.S', 'nephew', 'blood', 'nephew', 'पुतण्या'],
-  ['me', 'zunk',   'eZ.C', 'siblings_child', 'blood', 'siblings child', 'बहीण → अपत्य'],
+  ['me', 'zunk',   'eZ.C', 'siblings_child', 'blood', 'siblings child', 'ताईचे अपत्य'],
   ['me', 'adopt',  'yB.D', 'niece', 'blood', 'niece (adoptive)', 'पुतणी (दत्तक)'],
   // cousins
-  ['me', 'fbs',    'F.eB.S', 'first_cousin', 'blood', 'first cousin', 'चुलत भाऊ'],
-  ['me', 'fbd',    'F.eB.D', 'first_cousin', 'blood', 'first cousin', 'चुलत बहीण'],
-  ['me', 'fzs',    'F.yZ.S', 'first_cousin', 'blood', 'first cousin', 'आतेभाऊ'],
-  ['me', 'mbs',    'M.yB.S', 'first_cousin', 'blood', 'first cousin', 'मामेभाऊ'],
-  ['me', 'mzs',    'M.eZ.S', 'first_cousin', 'blood', 'first cousin', 'मावसभाऊ'],
-  ['me', 'fbdd',   'F.eB.D.D', 'first_cousin_once_removed', 'blood', 'first cousin once removed', 'वडील → भाऊ → मुलगी → मुलगी'],
-  ['me', 'gfbss',  'F.F.yB.S.S', 'second_cousin', 'blood', 'second cousin', 'वडील → वडील → भाऊ → मुलगा → मुलगा'],
+  ['me', 'fbs',    'F.eB.S', 'first_cousin', 'blood', 'cousin', 'चुलत भाऊ'],
+  ['me', 'fbd',    'F.eB.D', 'first_cousin', 'blood', 'cousin', 'चुलत बहीण'],
+  ['me', 'fzs',    'F.yZ.S', 'first_cousin', 'blood', 'cousin', 'आतेभाऊ'],
+  ['me', 'mbs',    'M.yB.S', 'first_cousin', 'blood', 'cousin', 'मामेभाऊ'],
+  ['me', 'mzs',    'M.eZ.S', 'first_cousin', 'blood', 'cousin', 'मावसभाऊ'],
+  ['me', 'fbdd',   'F.eB.D.D', 'first_cousin_once_removed', 'blood', "cousin's daughter", 'चुलत बहिणीची मुलगी'],
+  ['me', 'gfbss',  'F.F.yB.S.S', 'second_cousin', 'blood', 'second cousin', 'वडिलांच्या चुलत भावाचा मुलगा'],
   // in-laws
   ['me', 'wf',     'W.F', 'father_in_law', 'affinal', 'father in law', 'सासरे'],
   ['me', 'wm',     'W.M', 'mother_in_law', 'affinal', 'mother in law', 'सासू'],
@@ -193,5 +193,37 @@ describe('dictionary overrides', () => {
     const r = rel('me', 'shankar');
     expect(labelRelationship(r, 'mr', { 'M.M.B': 'आजीचे भाऊ' }).text).toBe('आजीचे भाऊ');
     expect(labelRelationship(r, 'en', { 'M.M.B': 'great-uncle' }).text).toBe('great-uncle');
+  });
+});
+
+describe('plain-language labels for distant cousins', () => {
+  // Indumati's daughters: Suvarna and (my grandmother) Asha; Suvarna's son Rahul, his son Siddharth
+  const b = new FamilyBuilder()
+    .person('indu', 'female')
+    .person('suvarna', 'female', '1940')
+    .person('asha', 'female', '1945')
+    .person('mom', 'female')
+    .person('me', 'male')
+    .person('rahul', 'male')
+    .person('sid', 'male');
+  b.children(b.union('indu'), ['suvarna', 'asha']);
+  b.children(b.union('asha'), ['mom']);
+  b.children(b.union('mom'), ['me']);
+  b.children(b.union('suvarna'), ['rahul']);
+  b.children(b.union('rahul'), ['sid']);
+  const r = new KinshipResolver(b.build());
+
+  it('says "mother\'s cousin" instead of "first cousin once removed"', () => {
+    const rahul = r.find('me', 'rahul');
+    expect(rahul.english).toBe('first_cousin_once_removed');
+    expect(labelRelationship(rahul, 'en').text).toBe("mother's cousin");
+    expect(labelRelationship(rahul, 'mr').text).toBe('आईचा मावसभाऊ');
+  });
+
+  it('says "cousin\'s son" the other way round, and "second cousin" one generation down', () => {
+    expect(labelRelationship(r.find('rahul', 'me'), 'en').text).toBe("cousin's son");
+    const sid = r.find('me', 'sid');
+    expect(labelRelationship(sid, 'en').text).toBe('second cousin');
+    expect(labelRelationship(sid, 'mr').text).toBe('आईच्या मावसभावाचा मुलगा');
   });
 });

@@ -14,7 +14,7 @@ import { PERSON_H, PERSON_W, personNodeId, unionNodeId, type LaidOutEdge, type L
 
 const GAP_X = 28;
 const STEP_X = PERSON_W + GAP_X;
-const ROW = 140; // vertical distance between generations
+const ROW = PERSON_H + 76; // vertical distance between generations
 const DOT = 10;
 
 export type FamilyViewOptions = { ancestorLevels?: number };

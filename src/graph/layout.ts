@@ -5,8 +5,8 @@
 import dagre from '@dagrejs/dagre';
 import type { GenealogyGraph, Lineage } from '@/domain/genealogy/graph';
 
-export const PERSON_W = 192;
-export const PERSON_H = 64;
+export const PERSON_W = 216;
+export const PERSON_H = 88;
 const UNION_SIZE = 10;
 
 export type LaidOutNode =

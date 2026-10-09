@@ -21,10 +21,10 @@ export function DeletePersonDialog({ person, onClose, onDone }: { person: Person
         <div className="space-y-3">
           <p>{t('delete.has', { name })}</p>
           <ul className="list-inside list-disc text-stone-700">
-            <li>{t('delete.parents', { count: impact.data.parents })}</li>
+            <li>{impact.data.parents === 1 ? t('delete.parents1') : t('delete.parents', { count: impact.data.parents })}</li>
             <li>{t('delete.partners', { count: impact.data.partners })}</li>
-            <li>{t('delete.children', { count: impact.data.children })}</li>
-            <li>{t('delete.media', { count: impact.data.media })}</li>
+            <li>{impact.data.children === 1 ? t('delete.children1') : t('delete.children', { count: impact.data.children })}</li>
+            <li>{impact.data.media === 1 ? t('delete.media1') : t('delete.media', { count: impact.data.media })}</li>
           </ul>
           <p className="text-sm text-stone-500">{t('delete.note')}</p>
         </div>

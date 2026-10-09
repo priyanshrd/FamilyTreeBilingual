@@ -54,6 +54,18 @@ export function RelationshipFinder({ model, familyId, initialA, initialB, terms,
             </label>
           )}
         </div>
+        {(a || b) && (
+          <button
+            type="button"
+            onClick={() => {
+              setA(b);
+              setB(a);
+            }}
+            className="min-h-11 rounded-lg border border-stone-300 px-3 text-sm text-stone-700 hover:bg-stone-100"
+          >
+            {t('rel.swap')}
+          </button>
+        )}
         <PersonPicker model={model} value={b} onChange={setB} label={t('rel.to')} />
 
         {!result && <p className="text-stone-500">{t('rel.pickBoth')}</p>}

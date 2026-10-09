@@ -58,8 +58,9 @@ export function BilingualField({ label, value, onChange, placeholder, required, 
             'aria-label': `${label} — ${TAGS[lang]}`,
             'aria-invalid': error ? true : undefined,
             onChange: (e: { target: { value: string } }) => onChange(liveUpdate(lang, e.target.value)),
-            className:
-              'block w-full rounded-r-lg border border-stone-300 bg-white px-3 text-base text-stone-900 placeholder:text-stone-400 focus:border-amber-700 focus:ring-2 focus:ring-amber-700/30 focus:outline-none',
+            className: `block w-full rounded-r-lg border px-3 text-base text-stone-900 placeholder:text-stone-400 focus:border-amber-700 focus:ring-2 focus:ring-amber-700/30 focus:outline-none ${
+              isAuto(value, lang) ? 'border-amber-400 bg-amber-50' : 'border-stone-300 bg-white'
+            }`,
           };
           return (
             <div key={lang}>
