@@ -265,14 +265,14 @@ export function WorkspacePage() {
         {model && model.persons.size > 0 && (
           <>
             <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-stone-200 bg-white px-2 py-1.5 text-sm whitespace-nowrap sm:gap-1.5 sm:px-3">
-              <div role="group" aria-label={t('view.label')} className="inline-flex shrink-0 rounded-lg border border-stone-200 p-0.5">
+              <div role="group" aria-label={t('view.label')} className="inline-flex shrink-0 rounded-lg border border-stone-200 p-0.5 max-sm:flex max-sm:w-full">
                 {(['family', 'tree', 'list'] as const).map((v) => (
                   <button
                     key={v}
                     type="button"
                     aria-pressed={view === v}
                     onClick={() => setView(v)}
-                    className={`min-h-10 rounded-md px-3 ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
+                    className={`min-h-10 rounded-md px-3 max-sm:flex-1 max-sm:px-1 max-sm:leading-tight max-sm:whitespace-normal ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
                   >
                     {t(`view.${v}`)}
                   </button>

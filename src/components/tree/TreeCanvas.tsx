@@ -16,6 +16,7 @@ import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { displayName, isUnknown, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { PERSON_H, PERSON_W, personNodeId, type LaidOutEdge, type TreeLayout } from '@/graph/layout';
 import { useI18n } from '@/i18n/I18nProvider';
+import { textScale, useTextSize } from '@/services/textSize';
 import { PHONE_SHEET_FRACTION } from '@/components/person/PersonDrawer';
 
 const isPhone = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
@@ -50,19 +51,19 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
       title={data.name}
-      className={`relative flex items-center gap-2.5 rounded-lg border border-l-[6px] bg-white px-2.5 shadow-sm ${GENDER_ACCENT[data.gender]} ${
+      className={`relative flex items-center gap-[10px] rounded-lg border border-l-[6px] bg-white px-[10px] shadow-sm ${GENDER_ACCENT[data.gender]} ${
         data.selected ? 'ring-2 ring-amber-700' : data.highlight ? 'bg-sky-50 ring-2 ring-sky-600' : ''
       } ${data.placeholder ? 'border-2 border-dashed border-stone-400 bg-stone-50' : 'border-stone-300'}`}
     >
       <Handle type="target" position={Position.Top} className="!invisible" />
-      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-12 shrink-0 rounded-full object-cover" />}
+      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-[48px] shrink-0 rounded-full object-cover" />}
       <span className="flex min-w-0 flex-col">
-        <span className={`line-clamp-2 text-base leading-tight font-medium ${data.fallback ? 'text-stone-600 italic' : 'text-stone-900'}`}>{data.name}</span>
-        {data.years && <span className="truncate text-sm text-stone-600">{data.years}</span>}
-        {data.relation && <span className="truncate text-sm font-medium text-sky-800">{data.relation}</span>}
+        <span className={`line-clamp-2 text-[16px] leading-tight font-medium ${data.fallback ? 'text-stone-600 italic' : 'text-stone-900'}`}>{data.name}</span>
+        {data.years && <span className="truncate text-[14px] text-stone-600">{data.years}</span>}
+        {data.relation && <span className="truncate text-[14px] font-medium text-sky-800">{data.relation}</span>}
       </span>
       {data.more && (
-        <span aria-hidden className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-amber-700 text-xs text-white">
+        <span aria-hidden className="absolute -top-2 -right-2 flex size-[20px] items-center justify-center rounded-full bg-amber-700 text-[12px] text-white">
           +
         </span>
       )}
@@ -89,8 +90,10 @@ function edgeStyle(e: LaidOutEdge): React.CSSProperties {
   return { stroke: '#57534e', strokeWidth: 1.5, strokeDasharray: dash };
 }
 
+/** Fitting the tree: never above 100% or below a readable size — both grow with the chosen text size. */
 function fitOptions() {
-  return { padding: 0.15, maxZoom: 1, minZoom: MIN_FIT_ZOOM, duration: 300 };
+  const k = textScale();
+  return { padding: 0.15, maxZoom: k, minZoom: MIN_FIT_ZOOM * k, duration: 300 };
 }
 
 type Props = {
@@ -112,6 +115,18 @@ type Props = {
 function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSelect, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
+  const textSize = useTextSize();
+  const ariaLabels = useMemo(
+    () => ({
+      'controls.ariaLabel': t('tree.controls'),
+      'controls.zoomIn.ariaLabel': t('tree.zoomIn'),
+      'controls.zoomOut.ariaLabel': t('tree.zoomOut'),
+      'controls.fitView.ariaLabel': t('tree.fit'),
+      'node.a11yDescription.default': t('tree.nodeHelp'),
+      'node.a11yDescription.keyboardDisabled': t('tree.nodeHelp'),
+    }),
+    [t],
+  );
 
   const toNode = useCallback(
     (n: TreeLayout['nodes'][number], position?: { x: number; y: number }): Node => {
@@ -168,11 +183,11 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSel
     });
     if (fresh)
       requestAnimationFrame(async () => {
-        if (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM)) return;
+        if (isPhone() && selectedId && focus(selectedId, PHONE_FOCUS_ZOOM * textScale())) return;
         await flow.fitView(fitOptions());
         // too big to fit readably: show the chosen person rather than the middle of the tree
         const anchor = selectedId ?? focusId;
-        if (anchor && flow.getZoom() <= MIN_FIT_ZOOM + 0.01) focus(anchor, Math.max(flow.getZoom(), FOCUS_ZOOM));
+        if (anchor && flow.getZoom() <= MIN_FIT_ZOOM * textScale() + 0.01) focus(anchor, Math.max(flow.getZoom(), FOCUS_ZOOM * textScale()));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new layout re-fits; selection changes are handled by centerOn
   }, [layout, toNode, setNodes, flow]);
@@ -248,9 +263,17 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSel
 
   useEffect(() => {
     if (!centerOn) return;
-    focus(centerOn, Math.max(flow.getZoom(), isPhone() ? PHONE_FOCUS_ZOOM : 0.9));
+    focus(centerOn, Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale()));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when asked to
   }, [centerOn, layout, flow]);
+
+  // A new text size changes the readable zoom range: fit again.
+  const firstTextSize = useRef(textSize);
+  useEffect(() => {
+    if (firstTextSize.current === textSize) return;
+    firstTextSize.current = textSize;
+    void flow.fitView(fitOptions());
+  }, [textSize, flow]);
 
   // When a person is picked on a larger screen, the side panel narrows the tree; if their box
   // ends up hidden or cut off, slide the tree so it is fully visible (zoom unchanged).
@@ -275,6 +298,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, onSel
   return (
     <div ref={wrapper} className="absolute inset-0">
       <ReactFlow
+        ariaLabelConfig={ariaLabels}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}

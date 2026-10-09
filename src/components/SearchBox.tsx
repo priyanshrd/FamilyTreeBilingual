@@ -54,8 +54,13 @@ export function SearchBox({ model, onPick }: { model: FamilyModel; onPick: (id: 
               }}
               className={`flex min-h-11 cursor-pointer items-center justify-between gap-2 px-3 ${i === active ? 'bg-amber-50' : 'hover:bg-stone-50'}`}
             >
-              <span>{displayName(p, lang).text}</span>
-              <span className="text-xs text-stone-500">{lifespan(p, lang)}</span>
+              <span className="py-1">
+                <span className="block">{displayName(p, lang).text}</span>
+                {p.names[lang === 'mr' ? 'en' : 'mr'] && p.names[lang] && (
+                  <span className="block text-sm text-stone-500">{p.names[lang === 'mr' ? 'en' : 'mr']!.full_name}</span>
+                )}
+              </span>
+              <span className="text-sm text-stone-600">{lifespan(p, lang)}</span>
             </li>
           ))}
         </ul>

@@ -10,6 +10,8 @@ import { Button } from './ui/Button';
 import { DIALOG_ACTIONS_CLASS, Dialog } from './ui/Dialog';
 import { TextField } from './ui/TextField';
 import { LanguageToggle } from './LanguageToggle';
+import { Choice } from './ui/Choice';
+import { setTextSize, useTextSize, type TextSize } from '@/services/textSize';
 
 type Props = { familyId?: string; model?: FamilyModel; onClose: () => void; onChanged: () => void };
 
@@ -19,6 +21,7 @@ export function SettingsDialog({ familyId, model, onClose, onChanged }: Props) {
   const [name, setName] = useState(() => deviceSettings.editorName() ?? '');
   const [autoFill, setAutoFill] = useState(() => deviceSettings.autoFill());
   const [message, setMessage] = useState<string | null>(null);
+  const textSize = useTextSize();
 
   const fill = useMutation({
     mutationFn: (to: 'en' | 'mr') => fillMissingNames(familyId!, [...model!.persons.values()], to, transliterate),
@@ -35,6 +38,16 @@ export function SettingsDialog({ familyId, model, onClose, onChanged }: Props) {
         <div>
           <p className="mb-1 text-sm font-medium text-stone-700">{t('settings.language')}</p>
           <LanguageToggle />
+        </div>
+
+        <div>
+          <Choice<TextSize>
+            label={t('settings.textSize')}
+            value={textSize}
+            onChange={setTextSize}
+            options={(['normal', 'large', 'xlarge'] as const).map((v) => ({ value: v, label: t(`textSize.${v}`) }))}
+          />
+          <p className="mt-1 text-sm text-stone-500">{t('settings.textSizeHint')}</p>
         </div>
 
         <TextField label={t('settings.editorName')} hint={t('settings.editorNameHint')} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
