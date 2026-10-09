@@ -130,6 +130,48 @@ function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
     [layout],
   );
 
+  // Dragging a box carries everything drawn below it: its family-unit dots, children,
+  // grandchildren and so on. (A spouse joined through a dot stays where it is.)
+  const below = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const e of layout.edges) map.set(e.source, [...(map.get(e.source) ?? []), e.target]);
+    return map;
+  }, [layout]);
+  const dragStart = useRef<Map<string, { x: number; y: number }> | null>(null);
+
+  const onNodeDragStart = useCallback(
+    (_: unknown, node: Node) => {
+      const start = new Map([[node.id, { ...node.position }]]);
+      const queue = [...(below.get(node.id) ?? [])];
+      while (queue.length) {
+        const id = queue.shift()!;
+        if (start.has(id)) continue;
+        const pos = flow.getNode(id)?.position;
+        if (pos) start.set(id, { ...pos });
+        queue.push(...(below.get(id) ?? []));
+      }
+      dragStart.current = start;
+    },
+    [below, flow],
+  );
+
+  const onNodeDrag = useCallback(
+    (_: unknown, node: Node) => {
+      const start = dragStart.current;
+      const origin = start?.get(node.id);
+      if (!start || !origin) return;
+      const dx = node.position.x - origin.x;
+      const dy = node.position.y - origin.y;
+      setNodes((ns) =>
+        ns.map((n) => {
+          const p = n.id !== node.id ? start.get(n.id) : undefined;
+          return p ? { ...n, position: { x: p.x + dx, y: p.y + dy } } : n;
+        }),
+      );
+    },
+    [setNodes],
+  );
+
   useEffect(() => {
     if (!centerOn) return;
     const n = layout.nodes.find((x) => x.kind === 'person' && x.id === centerOn);
@@ -141,6 +183,12 @@ function Canvas({ model, layout, selectedId, centerOn, onSelect }: Props) {
       nodes={nodes}
       edges={edges}
       onNodesChange={onNodesChange}
+      onNodeDragStart={onNodeDragStart}
+      onNodeDrag={onNodeDrag}
+      onNodeDragStop={(e, node) => {
+        onNodeDrag(e, node);
+        dragStart.current = null;
+      }}
       nodeTypes={nodeTypes}
       onNodeClick={(_, node) => node.type === 'person' && onSelect(node.id.slice(2))}
       fitView
