@@ -1,5 +1,5 @@
 import { formatFuzzyDate, parseFuzzyDate } from '@/domain/dates/fuzzyDate';
-import { isBlank, SIMPLE_FACTS, type Bi, type InputErrors, type PersonInput } from '@/domain/family/personInput';
+import { isBlank, SIMPLE_FACTS, TRANSLITERABLE, type Bi, type InputErrors, type PersonInput } from '@/domain/family/personInput';
 import type { Gender } from '@/domain/genealogy/graph';
 import { useI18n } from '@/i18n/I18nProvider';
 import type { StringKey } from '@/i18n/strings';
@@ -37,6 +37,7 @@ export function PersonForm({ value, onChange, errors, detailsOpen }: Props) {
         value={value.name}
         onChange={(v) => set('name', v)}
         placeholder={NAME_EXAMPLE}
+        transliterable
         error={errors.name ? t('person.nameRequired') : null}
       />
 
@@ -73,7 +74,7 @@ export function PersonForm({ value, onChange, errors, detailsOpen }: Props) {
           hint={dateHint(value.birth)}
           error={errors.birth ? t('person.dateInvalid') : null}
         />
-        <BilingualField label={t('person.birthPlace')} value={value.birthPlace} onChange={(v) => set('birthPlace', v)} placeholder={place} />
+        <BilingualField label={t('person.birthPlace')} value={value.birthPlace} onChange={(v) => set('birthPlace', v)} placeholder={place} transliterable />
       </div>
 
       {value.isLiving !== true && (
@@ -85,7 +86,7 @@ export function PersonForm({ value, onChange, errors, detailsOpen }: Props) {
             hint={value.death.trim() ? dateHint(value.death) : undefined}
             error={errors.death ? t('person.dateInvalid') : null}
           />
-          <BilingualField label={t('person.deathPlace')} value={value.deathPlace} onChange={(v) => set('deathPlace', v)} placeholder={place} />
+          <BilingualField label={t('person.deathPlace')} value={value.deathPlace} onChange={(v) => set('deathPlace', v)} placeholder={place} transliterable />
         </div>
       )}
 
@@ -102,10 +103,11 @@ export function PersonForm({ value, onChange, errors, detailsOpen }: Props) {
               value={value[f.field]}
               onChange={(v) => set(f.field, v)}
               placeholder={f.in === 'place' ? place : undefined}
+              transliterable={(TRANSLITERABLE as readonly string[]).includes(f.field)}
             />
           ))}
-          <BilingualField label={t('person.nickname')} value={value.nickname} onChange={(v) => set('nickname', v)} />
-          <BilingualField label={t('person.maidenName')} value={value.maidenName} onChange={(v) => set('maidenName', v)} />
+          <BilingualField label={t('person.nickname')} value={value.nickname} onChange={(v) => set('nickname', v)} transliterable />
+          <BilingualField label={t('person.maidenName')} value={value.maidenName} onChange={(v) => set('maidenName', v)} transliterable />
           <BilingualField label={t('person.notes')} value={value.notes} onChange={(v) => set('notes', v)} multiline />
         </div>
       </details>

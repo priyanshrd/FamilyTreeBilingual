@@ -124,7 +124,9 @@ export function WorkspacePage() {
         )}
       </main>
 
-      {modal?.kind === 'settings' && <SettingsDialog onClose={() => setModal(null)} />}
+      {modal?.kind === 'settings' && (
+        <SettingsDialog familyId={familyId} model={model} onClose={() => setModal(null)} onChanged={() => void refresh()} />
+      )}
       {modal?.kind === 'first' && familyId && (
         <EditPersonDialog familyId={familyId} person={null} onClose={() => setModal(null)} onDone={(id) => void afterChange(id)} />
       )}

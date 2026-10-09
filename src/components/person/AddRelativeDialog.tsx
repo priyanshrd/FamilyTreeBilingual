@@ -3,7 +3,10 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { displayName, lifespan, searchPeople, type FamilyModel } from '@/domain/family/familyModel';
 import { EMPTY_PERSON, validatePersonInput, type InputErrors, type PersonInput } from '@/domain/family/personInput';
 import type { Gender } from '@/domain/genealogy/graph';
+import { fillOtherLanguage } from '@/domain/family/personInput';
+import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
+import { deviceSettings } from '@/services/deviceSettings';
 import type { StringKey } from '@/i18n/strings';
 import { addRelative, connectExisting, type Relation, type RelationOptions } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
@@ -56,7 +59,8 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
   const save = useMutation({
     mutationFn: async () => {
       if (step === 'connect') return (await connectExisting(anchorId, otherId!, relation, effectiveOptions)).person_id;
-      return (await addRelative(anchorId, relation, input, effectiveOptions)).person_id;
+      const toSave = deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input;
+      return (await addRelative(anchorId, relation, toSave, effectiveOptions)).person_id;
     },
     onSuccess: (id) => onDone(id),
   });

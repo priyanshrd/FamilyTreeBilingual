@@ -11,7 +11,10 @@ import {
   type InputErrors,
   type PersonInput,
 } from '@/domain/family/personInput';
+import { fillOtherLanguage } from '@/domain/family/personInput';
+import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
+import { deviceSettings } from '@/services/deviceSettings';
 import { createPerson, updatePerson } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
@@ -56,11 +59,12 @@ export function EditPersonDialog({
   const [errors, setErrors] = useState<InputErrors>({});
   const save = useMutation({
     mutationFn: async () => {
+      const toSave = deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input;
       if (person) {
-        await updatePerson(familyId, person, input);
+        await updatePerson(familyId, person, toSave);
         return person.id;
       }
-      return createPerson(familyId, input);
+      return createPerson(familyId, toSave);
     },
     onSuccess: onDone,
   });

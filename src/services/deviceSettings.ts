@@ -7,6 +7,7 @@ const KEYS = {
   uiLanguage: 'ft.uiLanguage',
   me: (familyId: string) => `ft.me.${familyId}`,
   lastFamily: 'ft.lastFamily',
+  autoFill: 'ft.autoFillOtherLanguage',
   lastPerson: (familyId: string) => `ft.lastPerson.${familyId}`,
 };
 
@@ -36,6 +37,9 @@ export const deviceSettings = {
   setMePersonId: (familyId: string, personId: string | null) => write(KEYS.me(familyId), personId),
   lastPersonId: (familyId: string) => read(KEYS.lastPerson(familyId)),
   setLastPersonId: (familyId: string, personId: string) => write(KEYS.lastPerson(familyId), personId),
+  /** Fill names/places in the other language on save (default on). */
+  autoFill: () => read(KEYS.autoFill) !== 'off',
+  setAutoFill: (on: boolean) => write(KEYS.autoFill, on ? null : 'off'),
   lastFamily: () => read(KEYS.lastFamily),
   setLastFamily: (familyId: string) => write(KEYS.lastFamily, familyId),
 };

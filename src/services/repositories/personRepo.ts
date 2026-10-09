@@ -4,6 +4,9 @@ import { currentFact, type PersonView } from '@/domain/family/familyModel';
 import {
   EMPTY_BI,
   effectiveLiving,
+  isAuto,
+  TRANSLITERATION_PROVIDER,
+  type Lang,
   parsedDate,
   SIMPLE_FACTS,
   splitName,
@@ -102,15 +105,17 @@ async function saveName(familyId: string, personId: string, type: 'primary' | 'a
   for (const [lang, text] of Object.entries(wanted)) {
     const prev = existing[lang];
     if (!text || prev?.full_name === text) continue;
-    const corrected = prev && prev.source !== 'manual';
+    const generated = isAuto(value, lang as Lang) && (!prev || prev.source === 'auto');
+    const corrected = !generated && prev && prev.source !== 'manual';
     const res = await supabase.from('person_name_forms').upsert(
       {
         name_id: nameId,
         family_id: familyId,
         lang,
         ...splitName(text),
-        source: corrected ? 'corrected' : 'manual',
-        generated_from: corrected ? prev.generated_from : null,
+        source: generated ? 'auto' : corrected ? 'corrected' : 'manual',
+        generated_from: generated ? (lang === 'en' ? 'mr' : 'en') : corrected ? prev.generated_from : null,
+        provider: generated ? TRANSLITERATION_PROVIDER : null,
       },
       { onConflict: 'name_id,lang' },
     );
@@ -161,4 +166,30 @@ export async function deleteImpact(personId: string): Promise<DeleteImpact> {
 export async function softDeletePerson(personId: string): Promise<void> {
   const { error } = await supabase.rpc('soft_delete_person', { p_person_id: personId });
   if (error) throw error;
+}
+
+/**
+ * Fills the missing language of every person's primary name by transliteration (marked "auto").
+ * Never touches an existing form. Returns how many names were filled.
+ */
+export async function fillMissingNames(familyId: string, people: PersonView[], to: Lang, convert: (text: string, to: Lang) => string): Promise<number> {
+  const from: Lang = to === 'mr' ? 'en' : 'mr';
+  const rows = people
+    .filter((p) => !p.isPlaceholder && p.primaryNameId && !p.names[to] && p.names[from])
+    .map((p) => {
+      const text = convert(p.names[from]!.full_name, to);
+      return {
+        name_id: p.primaryNameId!,
+        family_id: familyId,
+        lang: to,
+        ...splitName(text),
+        source: 'auto',
+        generated_from: from,
+        provider: TRANSLITERATION_PROVIDER,
+      };
+    });
+  if (!rows.length) return 0;
+  const res = await supabase.from('person_name_forms').insert(rows);
+  if (res.error) throw res.error;
+  return rows.length;
 }
