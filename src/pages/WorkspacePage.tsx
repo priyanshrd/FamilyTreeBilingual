@@ -77,14 +77,16 @@ export function WorkspacePage() {
     return view === 'family' ? familyViewLayout(model.graph, focusId) : layoutTree(model.graph, visible);
   }, [model, focusId, view, visible]);
 
-  /** Select a person. In family view they also become the centre of the chart (with Back history). */
+  /**
+   * Select a person. They also become the centre of the family view (with Back history), whichever
+   * view they were picked in, so switching to Family view opens their family.
+   */
   function select(id: string, center = false) {
     setSelectedId(id);
     if (familyId) deviceSettings.setLastPersonId(familyId, id);
-    if (view === 'family') {
-      if (focusId && focusId !== id) setHistory((h) => [...h.slice(-49), focusId]);
-      setFocus(id);
-    } else if (center) setCenterOn(id);
+    if (focusId && focusId !== id) setHistory((h) => [...h.slice(-49), focusId]);
+    setFocus(id);
+    if (center && view !== 'family') setCenterOn(id);
   }
 
   function back() {
