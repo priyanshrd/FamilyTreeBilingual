@@ -38,7 +38,7 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
   return (
     <aside
       aria-label={displayName(p, lang).text}
-      className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-white sm:inset-y-0 sm:right-0 sm:left-auto sm:w-96 sm:border-l sm:border-stone-200 sm:shadow-xl"
+      className="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-white sm:inset-y-0 sm:right-0 sm:left-auto sm:w-[26rem] sm:border-l sm:border-stone-200 sm:shadow-xl"
     >
       <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4">
         <div>

@@ -90,7 +90,7 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
       {step === 'choose' && (
         <div>
           <p className="mb-3 text-stone-600">{t('relative.choose')}</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2">
             {KINDS.map((k) => (
               <Button key={k.kind} variant="secondary" onClick={() => choose(k)}>
                 {t(`relative.${k.kind}` as StringKey)}

@@ -9,6 +9,7 @@ import { SearchBox } from '@/components/SearchBox';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { TreeCanvas } from '@/components/tree/TreeCanvas';
 import { Button } from '@/components/ui/Button';
+import { SIDEBAR_RESERVE_CLASS } from '@/components/ui/Dialog';
 import { ErrorMessage, Loading } from '@/components/ui/Status';
 import type { FamilyModel } from '@/domain/family/familyModel';
 import { getText } from '@/domain/localized/localized';
@@ -61,9 +62,11 @@ export function WorkspacePage() {
   }
 
   const title = getText(family.data?.name, lang)?.text ?? t('app.title');
+  // The sidebar (person panel or a form) takes the right edge; header and tree shrink beside it.
+  const panelOpen = modal != null || Boolean(selectedId && model?.persons.has(selectedId));
 
   return (
-    <div className="flex h-dvh flex-col bg-stone-50">
+    <div className={`flex h-dvh flex-col bg-stone-50 transition-[padding] ${panelOpen ? SIDEBAR_RESERVE_CLASS : ''}`}>
       <header className="flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-4 py-2">
         <h1 className="mr-auto text-lg font-semibold text-amber-900">{title}</h1>
         <div className="order-last w-full sm:order-none sm:w-auto">
