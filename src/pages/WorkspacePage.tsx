@@ -12,6 +12,7 @@ import { SIDEBAR_RESERVE_CLASS } from '@/components/ui/Dialog';
 import { ErrorMessage, Loading } from '@/components/ui/Status';
 import type { FamilyModel } from '@/domain/family/familyModel';
 import { getText } from '@/domain/localized/localized';
+import { exportFileName, exportVisibleTree } from '@/export/exportView';
 import { familyViewLayout } from '@/graph/familyView';
 import { layoutTree } from '@/graph/layout';
 import { neighbourhood } from '@/graph/projection';
@@ -87,6 +88,20 @@ export function WorkspacePage() {
     if (focusId && focusId !== id) setHistory((h) => [...h.slice(-49), focusId]);
     setFocus(id);
     if (center && view !== 'family') setCenterOn(id);
+  }
+
+  const [exporting, setExporting] = useState(false);
+  async function saveImage() {
+    const el = document.querySelector<HTMLElement>('main .react-flow');
+    if (!el) return;
+    setExporting(true);
+    try {
+      await exportVisibleTree(el, exportFileName(title, t(`view.${view}`)));
+    } catch {
+      alert(t('export.failed'));
+    } finally {
+      setExporting(false);
+    }
   }
 
   function back() {
@@ -165,6 +180,11 @@ export function WorkspacePage() {
               {view === 'family' && history.length > 0 && (
                 <button type="button" onClick={back} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50">
                   {t('view.back')}
+                </button>
+              )}
+              {view !== 'list' && (
+                <button type="button" onClick={() => void saveImage()} disabled={exporting} className="min-h-8 rounded px-2 text-amber-800 hover:bg-amber-50 disabled:opacity-50">
+                  ⤓ {exporting ? t('export.saving') : t('export.png')}
                 </button>
               )}
               <span className="px-1 text-stone-500">{t('workspace.count', { count: [...model.persons.values()].filter((p) => !p.isPlaceholder).length })}</span>
