@@ -1,8 +1,12 @@
+import { Fragment } from 'react';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
-import { displayName, lifespan, type FamilyModel } from '@/domain/family/familyModel';
+import { SIMPLE_FACTS } from '@/domain/family/personInput';
+import { getText, type LocalizedText } from '@/domain/localized/localized';
+import { currentFact, displayName, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { useI18n } from '@/i18n/I18nProvider';
 import type { StringKey } from '@/i18n/strings';
 import { Button } from '@/components/ui/Button';
+import { LanguageToggle } from '@/components/LanguageToggle';
 
 type Props = {
   model: FamilyModel;
@@ -31,8 +35,23 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
   const children = g.childEdges(personId).map((e) => ({ id: e.childId, tag: e.lineage === 'biological' || e.lineage === 'unknown' ? null : `lineage.${e.lineage}` }));
   const siblings = g.siblings(personId).map((s) => ({ id: s.id, tag: s.kind === 'full' ? null : `sibling.${s.kind}` }));
 
-  const birth = formatFuzzyDate(p.birth.date, lang);
-  const death = formatFuzzyDate(p.death.date, lang);
+  const text = (lt: LocalizedText | null | undefined) => getText(lt, lang)?.text ?? '';
+  const nameIn = (forms: Record<string, { full_name: string }> | undefined) => (forms ? (forms[lang] ?? Object.values(forms)[0])?.full_name ?? '' : '');
+  const join = (...parts: string[]) => parts.filter(Boolean).join(' · ');
+  const birthFact = currentFact(p, 'birth');
+  const deathFact = currentFact(p, 'death');
+  const details: [string, string][] = (
+    [
+      [t('person.gender'), t(`gender.${p.gender}` as StringKey)],
+      [t('person.living'), p.isLiving == null ? '' : p.isLiving ? t('living.yes') : t('living.no')],
+      [t('person.birth'), join(formatFuzzyDate(p.birth.date, lang), text(birthFact?.place))],
+      [t('person.death'), join(formatFuzzyDate(p.death.date, lang), text(deathFact?.place))],
+      ...SIMPLE_FACTS.map((f) => [t(`person.${f.field}` as StringKey), text(currentFact(p, f.type)?.[f.in])] as [string, string]),
+      [t('person.nickname'), nameIn(p.otherNames.alias?.forms)],
+      [t('person.maidenName'), nameIn(p.otherNames.birth?.forms)],
+      [t('person.notes'), text(p.notes)],
+    ] as [string, string][]
+  ).filter(([, v]) => v);
   const hasRelatives = parents.length + partners.length + children.length + siblings.length > 0;
 
   return (
@@ -46,6 +65,9 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
           {lifespan(p, lang) && <p className="mt-1 text-sm text-stone-500">{lifespan(p, lang)}</p>}
         </div>
+        <span className="ml-auto sm:hidden">
+          <LanguageToggle compact />
+        </span>
         <button type="button" onClick={onClose} aria-label={t('person.close')} className="-m-1 rounded-lg p-2 text-2xl leading-none text-stone-500 hover:bg-stone-100">
           ×
         </button>
@@ -62,20 +84,12 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
       </div>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 p-4 text-sm">
-        <dt className="text-stone-500">{t('person.gender')}</dt>
-        <dd>{t(`gender.${p.gender}` as StringKey)}</dd>
-        {birth && (
-          <>
-            <dt className="text-stone-500">{t('person.birth')}</dt>
-            <dd>{birth}</dd>
-          </>
-        )}
-        {death && (
-          <>
-            <dt className="text-stone-500">{t('person.death')}</dt>
-            <dd>{death}</dd>
-          </>
-        )}
+        {details.map(([label, value]) => (
+          <Fragment key={label}>
+            <dt className="text-stone-500">{label}</dt>
+            <dd className="whitespace-pre-line">{value}</dd>
+          </Fragment>
+        ))}
       </dl>
 
       <div className="space-y-4 p-4 pt-0">

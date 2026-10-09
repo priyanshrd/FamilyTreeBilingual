@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 /** "Possible existing person found" — suggests, never merges. */
 export function useDuplicates(model: FamilyModel, input: PersonInput, nearbyIds: string[]) {
   return useMemo(() => {
-    const names = [input.nameEn, input.nameMr].filter((n) => n.trim().length >= 2);
+    const names = [input.name.en, input.name.mr].filter((n) => n.trim().length >= 2);
     if (!names.length) return [];
     const people = [...model.persons.values()].map((p) => ({
       id: p.id,
@@ -19,7 +19,7 @@ export function useDuplicates(model: FamilyModel, input: PersonInput, nearbyIds:
       relativeIds: [...model.graph.parents(p.id), ...model.graph.children(p.id), ...model.graph.partners(p.id)],
     }));
     return findPossibleDuplicates({ names, birthYear: approximateYear(parsedDate(input.birth)), nearbyIds }, people, 3);
-  }, [model, input.nameEn, input.nameMr, input.birth, nearbyIds]);
+  }, [model, input.name.en, input.name.mr, input.birth, nearbyIds]);
 }
 
 export function DuplicateWarning({

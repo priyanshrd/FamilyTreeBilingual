@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useAuth } from '@/app/AuthProvider';
 import { AddRelativeDialog } from '@/components/person/AddRelativeDialog';
 import { DeletePersonDialog } from '@/components/person/DeletePersonDialog';
 import { EditPersonDialog } from '@/components/person/EditPersonDialog';
@@ -26,7 +25,6 @@ type Modal = { kind: 'add' } | { kind: 'edit' } | { kind: 'delete' } | { kind: '
 
 export function WorkspacePage() {
   const { t, lang } = useI18n();
-  const { signOut } = useAuth();
   const family = useFamily();
   const familyId = family.data?.id;
   const modelQuery = useFamilyModel(familyId);
@@ -73,14 +71,9 @@ export function WorkspacePage() {
           {model && model.persons.size > 0 && <SearchBox model={model} onPick={(id) => select(id, true)} />}
         </div>
         <div className="flex items-center gap-1">
-          <span className="hidden sm:block">
-            <LanguageToggle />
-          </span>
+          <LanguageToggle />
           <Button variant="ghost" onClick={() => setModal({ kind: 'settings' })} aria-label={t('settings.open')}>
             ⚙
-          </Button>
-          <Button variant="ghost" onClick={() => void signOut()}>
-            {t('common.signOut')}
           </Button>
         </div>
       </header>

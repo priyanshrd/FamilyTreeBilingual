@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { LanguageToggle } from '@/components/LanguageToggle';
 
 /** Width of the right-hand sidebar; the workspace reserves the same space so the tree stays visible. */
 export const SIDEBAR_WIDTH_CLASS = 'sm:w-[26rem]';
@@ -34,6 +35,9 @@ export function Dialog({ title, onClose, children }: Props) {
         <h2 id={titleId} className="text-lg font-semibold text-stone-900">
           {title}
         </h2>
+        <span className="ml-auto sm:hidden">
+          <LanguageToggle compact />
+        </span>
         <button
           type="button"
           data-close

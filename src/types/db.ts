@@ -57,7 +57,9 @@ type DateCols<P extends string> = {
 export type PersonFactRow = {
   id: string;
   person_id: string;
-  fact_type: 'birth' | 'death' | 'burial' | 'occupation' | 'residence' | 'education' | 'religion' | 'custom';
+  fact_type:
+    | 'birth' | 'death' | 'burial' | 'occupation' | 'residence' | 'education' | 'religion' | 'custom'
+    | 'native_place' | 'gotra' | 'kuldaivat';
   value: LocalizedText | null;
   place: LocalizedText | null;
   notes: LocalizedText | null;

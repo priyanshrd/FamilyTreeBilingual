@@ -104,6 +104,32 @@ describe('create_person', () => {
     expect(facts).toBe(3);
   });
 
+  it('stores native place, gotra and kuldaivat facts, and other names', async () => {
+    const pid = await asOwner((c) =>
+      scalar<string>(c, 'select public.create_person($1, $2)', [
+        fid,
+        {
+          ...personPayload('Rajiv'),
+          names: [
+            { name_type: 'primary', is_primary: true, forms: { en: { full_name: 'Rajiv', source: 'manual' } } },
+            { name_type: 'alias', is_primary: false, forms: { mr: { full_name: 'राजू', source: 'manual' } } },
+          ],
+          facts: [
+            { fact_type: 'native_place', place: { mr: { v: 'सातारा', src: 'manual' } } },
+            { fact_type: 'gotra', value: { mr: { v: 'कश्यप', src: 'manual' } } },
+            { fact_type: 'kuldaivat', value: { en: { v: 'Khandoba', src: 'manual' } } },
+          ],
+        },
+      ]),
+    );
+    const types = await db.admin(async (c) =>
+      (await c.query(`select fact_type::text from person_facts where person_id = $1 order by 1`, [pid])).rows.map((r) => r.fact_type),
+    );
+    expect(types).toEqual(['gotra', 'kuldaivat', 'native_place']);
+    const names = await db.admin((c) => scalar<number>(c, `select count(*)::int from person_names where person_id = $1`, [pid]));
+    expect(names).toBe(2);
+  });
+
   it('rejects a person without any name', async () => {
     await expect(asOwner((c) => c.query('select public.create_person($1, $2)', [fid, { gender: 'male' }]))).rejects.toThrow(
       /primary name/,

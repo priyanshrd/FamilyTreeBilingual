@@ -17,6 +17,8 @@ export type PersonView = {
   primaryNameId: string | null;
   /** primary name forms by language */
   names: Record<string, NameFormRow>;
+  /** secondary names by type (nickname = 'alias', name before marriage = 'birth') */
+  otherNames: Partial<Record<'alias' | 'birth', { id: string; forms: Record<string, NameFormRow> }>>;
   /** all name strings (every name, every language) for search and duplicate checks */
   allNames: string[];
   birth: VitalFact;
@@ -82,6 +84,12 @@ export function buildFamilyModel(rows: FamilyRows): FamilyModel {
       notes: p.notes,
       primaryNameId: primary?.id ?? null,
       names: primaryForms,
+      otherNames: Object.fromEntries(
+        (['alias', 'birth'] as const).flatMap((type) => {
+          const n = names.find((x) => x !== primary && x.name_type === type);
+          return n ? [[type, { id: n.id, forms: Object.fromEntries((formsByName.get(n.id) ?? []).map((f) => [f.lang, f])) }]] : [];
+        }),
+      ),
       allNames: names.flatMap((n) => (formsByName.get(n.id) ?? []).map((f) => f.full_name)),
       birth: vital(facts.find((f) => f.fact_type === 'birth')),
       death: vital(facts.find((f) => f.fact_type === 'death')),
@@ -116,6 +124,12 @@ export function buildFamilyModel(rows: FamilyRows): FamilyModel {
   });
 
   return { persons, unions, graph };
+}
+
+/** The person's current fact of a type: one without an end date first, else the latest. */
+export function currentFact(p: PersonView, type: PersonFactRow['fact_type'] | string): PersonFactRow | undefined {
+  const facts = p.facts.filter((f) => f.fact_type === type);
+  return facts.find((f) => f.end_qualifier === 'unknown') ?? facts.at(-1);
 }
 
 /** Name in the requested language, falling back to any other; placeholders get a "?" label. */

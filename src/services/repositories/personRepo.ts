@@ -1,7 +1,20 @@
 // Person and relationship writes. Multi-row operations go through database RPCs (atomic, validated).
-import { toColumns } from '@/domain/dates/fuzzyDate';
-import { parsedDate, splitName, toPersonPayload, type PersonInput } from '@/domain/family/personInput';
-import type { PersonView } from '@/domain/family/familyModel';
+import { toColumns, type FuzzyDate } from '@/domain/dates/fuzzyDate';
+import { currentFact, type PersonView } from '@/domain/family/familyModel';
+import {
+  EMPTY_BI,
+  effectiveLiving,
+  parsedDate,
+  SIMPLE_FACTS,
+  splitName,
+  toLocalized,
+  toPersonPayload,
+  type Bi,
+  type FactType,
+  type PersonInput,
+} from '@/domain/family/personInput';
+import type { LocalizedText } from '@/domain/localized/localized';
+import type { PersonFactRow } from '@/types/db';
 import { supabase } from '@/services/supabase';
 
 export type Relation = 'parent' | 'adoptive_parent' | 'child' | 'spouse' | 'sibling' | 'step_parent';
@@ -44,67 +57,96 @@ export async function connectExisting(anchorId: string, otherId: string, relatio
   return data as { person_id: string; union_id: string | null };
 }
 
-/** Saves edits to an existing person: gender, living flag, primary name forms, birth and death. */
+/** Saves edits to an existing person: every field of the person form. */
 export async function updatePerson(familyId: string, person: PersonView, input: PersonInput): Promise<void> {
-  const death = parsedDate(input.death);
   const upd = await supabase
     .from('persons')
-    .update({ gender: input.gender, is_living: death.qualifier !== 'unknown' ? false : input.isLiving })
+    .update({ gender: input.gender, is_living: effectiveLiving(input), notes: toLocalized(input.notes, person.notes) })
     .eq('id', person.id);
   if (upd.error) throw upd.error;
 
-  let nameId = person.primaryNameId;
+  await saveName(familyId, person.id, 'primary', person.primaryNameId, person.names, input.name);
+  await saveName(familyId, person.id, 'alias', person.otherNames.alias?.id ?? null, person.otherNames.alias?.forms ?? {}, input.nickname);
+  await saveName(familyId, person.id, 'birth', person.otherNames.birth?.id ?? null, person.otherNames.birth?.forms ?? {}, input.maidenName);
+
+  const death = input.isLiving === true ? { date: '', place: EMPTY_BI } : { date: input.death, place: input.deathPlace };
+  await saveFact(familyId, person.id, 'birth', currentFact(person, 'birth'), {
+    date: parsedDate(input.birth),
+    place: toLocalized(input.birthPlace, currentFact(person, 'birth')?.place ?? null),
+  });
+  await saveFact(familyId, person.id, 'death', currentFact(person, 'death'), {
+    date: parsedDate(death.date),
+    place: toLocalized(death.place, currentFact(person, 'death')?.place ?? null),
+  });
+  for (const f of SIMPLE_FACTS) {
+    const existing = currentFact(person, f.type);
+    await saveFact(familyId, person.id, f.type, existing, { [f.in]: toLocalized(input[f.field], existing?.[f.in] ?? null) });
+  }
+}
+
+type NameForms = Record<string, { full_name: string; source: string; generated_from: string | null }>;
+
+/** Writes one bilingual name (primary or secondary). New/changed forms first, so a name is never empty. */
+async function saveName(familyId: string, personId: string, type: 'primary' | 'alias' | 'birth', nameId: string | null, existing: NameForms, value: Bi) {
+  const wanted: Record<string, string> = { en: value.en.trim(), mr: value.mr.trim() };
   if (!nameId) {
+    if (!wanted.en && !wanted.mr) return;
     const ins = await supabase
       .from('person_names')
-      .insert({ family_id: familyId, person_id: person.id, name_type: 'primary', is_primary: true })
+      .insert({ family_id: familyId, person_id: personId, name_type: type, is_primary: type === 'primary', sort_order: type === 'primary' ? 0 : 1 })
       .select('id')
       .single();
     if (ins.error) throw ins.error;
     nameId = ins.data.id as string;
   }
-
-  // Write new/changed forms before removing cleared ones, so the person always keeps a name.
-  const wanted: Record<string, string> = { en: input.nameEn.trim(), mr: input.nameMr.trim() };
-  for (const [lang, value] of Object.entries(wanted)) {
-    const existing = person.names[lang];
-    if (!value || existing?.full_name === value) continue;
+  for (const [lang, text] of Object.entries(wanted)) {
+    const prev = existing[lang];
+    if (!text || prev?.full_name === text) continue;
+    const corrected = prev && prev.source !== 'manual';
     const res = await supabase.from('person_name_forms').upsert(
       {
         name_id: nameId,
         family_id: familyId,
         lang,
-        ...splitName(value),
-        // typing over a generated value marks it corrected; otherwise it is manual
-        source: existing && existing.source !== 'manual' ? 'corrected' : 'manual',
-        generated_from: existing && existing.source !== 'manual' ? existing.generated_from : null,
+        ...splitName(text),
+        source: corrected ? 'corrected' : 'manual',
+        generated_from: corrected ? prev.generated_from : null,
       },
       { onConflict: 'name_id,lang' },
     );
     if (res.error) throw res.error;
   }
-  for (const [lang, value] of Object.entries(wanted)) {
-    if (value || !person.names[lang]) continue;
-    const res = await supabase.from('person_name_forms').delete().eq('name_id', nameId).eq('lang', lang);
-    if (res.error) throw res.error;
-  }
-
-  await saveVital(familyId, person.id, 'birth', person.birth.factId, input.birth);
-  await saveVital(familyId, person.id, 'death', person.death.factId, input.death);
-}
-
-async function saveVital(familyId: string, personId: string, type: 'birth' | 'death', factId: string | null, text: string) {
-  const fd = parsedDate(text);
-  if (fd.qualifier === 'unknown') {
-    if (!factId) return;
-    const res = await supabase.from('person_facts').update({ deleted_at: new Date().toISOString() }).eq('id', factId);
+  if (type !== 'primary' && !wanted.en && !wanted.mr) {
+    // a secondary name cleared completely: retire it
+    const res = await supabase.from('person_names').update({ deleted_at: new Date().toISOString() }).eq('id', nameId);
     if (res.error) throw res.error;
     return;
   }
-  const cols = toColumns(fd);
-  const res = factId
-    ? await supabase.from('person_facts').update(cols).eq('id', factId)
-    : await supabase.from('person_facts').insert({ family_id: familyId, person_id: personId, fact_type: type, ...cols });
+  for (const [lang, text] of Object.entries(wanted)) {
+    if (text || !existing[lang]) continue;
+    const res = await supabase.from('person_name_forms').delete().eq('name_id', nameId).eq('lang', lang);
+    if (res.error) throw res.error;
+  }
+}
+
+type FactPatch = { date?: FuzzyDate; place?: LocalizedText | null; value?: LocalizedText | null };
+
+/** Inserts, updates or (when everything is empty) soft-deletes one person fact. */
+async function saveFact(familyId: string, personId: string, type: FactType, existing: PersonFactRow | undefined, patch: FactPatch) {
+  const empty = (patch.date?.qualifier ?? 'unknown') === 'unknown' && !patch.place && !patch.value;
+  if (empty) {
+    if (!existing) return;
+    const res = await supabase.from('person_facts').update({ deleted_at: new Date().toISOString() }).eq('id', existing.id);
+    if (res.error) throw res.error;
+    return;
+  }
+  const row: Record<string, unknown> = {};
+  if (patch.date) Object.assign(row, toColumns(patch.date));
+  if ('place' in patch) row.place = patch.place;
+  if ('value' in patch) row.value = patch.value;
+  const res = existing
+    ? await supabase.from('person_facts').update(row).eq('id', existing.id)
+    : await supabase.from('person_facts').insert({ family_id: familyId, person_id: personId, fact_type: type, ...row });
   if (res.error) throw res.error;
 }
 

@@ -1,24 +1,42 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
-import { displayName, type PersonView } from '@/domain/family/familyModel';
-import { EMPTY_PERSON, validatePersonInput, type InputErrors, type PersonInput } from '@/domain/family/personInput';
+import { currentFact, displayName, type PersonView } from '@/domain/family/familyModel';
+import {
+  EMPTY_PERSON,
+  fromLocalized,
+  SIMPLE_FACTS,
+  validatePersonInput,
+  type Bi,
+  type InputErrors,
+  type PersonInput,
+} from '@/domain/family/personInput';
 import { useI18n } from '@/i18n/I18nProvider';
 import { createPerson, updatePerson } from '@/services/repositories/personRepo';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { errorMessage } from './AddRelativeDialog';
-import { PersonForm } from './PersonForm';
+import { hasMoreDetails, PersonForm } from './PersonForm';
 
 export function toInput(p: PersonView): PersonInput {
-  return {
-    nameEn: p.names.en?.full_name ?? '',
-    nameMr: p.names.mr?.full_name ?? '',
+  const forms = (f: Record<string, { full_name: string }> | undefined): Bi => ({ en: f?.en?.full_name ?? '', mr: f?.mr?.full_name ?? '' });
+  const birth = currentFact(p, 'birth');
+  const death = currentFact(p, 'death');
+  const input: PersonInput = {
+    ...EMPTY_PERSON,
+    name: forms(p.names),
+    nickname: forms(p.otherNames.alias?.forms),
+    maidenName: forms(p.otherNames.birth?.forms),
     gender: p.gender,
-    birth: formatFuzzyDate(p.birth.date, 'en'),
-    death: formatFuzzyDate(p.death.date, 'en'),
     isLiving: p.isLiving,
+    birth: formatFuzzyDate(p.birth.date, 'en'),
+    birthPlace: fromLocalized(birth?.place),
+    death: formatFuzzyDate(p.death.date, 'en'),
+    deathPlace: fromLocalized(death?.place),
+    notes: fromLocalized(p.notes),
   };
+  for (const f of SIMPLE_FACTS) input[f.field] = fromLocalized(currentFact(p, f.type)?.[f.in]);
+  return input;
 }
 
 /** Edit an existing person, or (person = null) create a person with no relationships yet. */
@@ -75,5 +93,6 @@ export function EditPersonDialog({
 }
 
 function PersonEditor({ input, setInput, errors }: { input: PersonInput; setInput: (v: PersonInput) => void; errors: InputErrors }) {
-  return <PersonForm value={input} onChange={setInput} errors={errors} />;
+  const [open] = useState(() => hasMoreDetails(input));
+  return <PersonForm value={input} onChange={setInput} errors={errors} detailsOpen={open} />;
 }
