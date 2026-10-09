@@ -47,7 +47,7 @@ export async function addRelative(anchorId: string, relation: Relation, input: P
     p_options: options,
   });
   if (error) throw error;
-  return data as { person_id: string; union_id: string | null };
+  return data as { person_id: string; union_id: string | null; placeholder_id?: string | null };
 }
 
 export async function connectExisting(anchorId: string, otherId: string, relation: Relation, options: RelationOptions = {}) {
@@ -58,7 +58,7 @@ export async function connectExisting(anchorId: string, otherId: string, relatio
     p_options: options,
   });
   if (error) throw error;
-  return data as { person_id: string; union_id: string | null };
+  return data as { person_id: string; union_id: string | null; placeholder_id?: string | null };
 }
 
 /** Saves edits to an existing person: every field of the person form. */
@@ -235,4 +235,17 @@ export async function refreshAutoNames(people: PersonView[], convert: (text: str
     }
   }
   return changed;
+}
+
+/** Saves birth-order numbers (1 = eldest; twins share a number) on the links from the given parents. */
+export async function saveBirthOrder(parentIds: string[], orders: Map<string, number>): Promise<void> {
+  for (const [childId, order] of orders) {
+    const res = await supabase
+      .from('parent_child')
+      .update({ child_order: order })
+      .eq('child_id', childId)
+      .in('parent_id', parentIds)
+      .is('deleted_at', null);
+    if (res.error) throw res.error;
+  }
 }

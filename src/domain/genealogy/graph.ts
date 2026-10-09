@@ -187,6 +187,15 @@ export class GenealogyGraph {
     return this.walk(parentId, Infinity, (id) => (this.up.get(id) ?? []).map((e) => e.parentId)).has(childId);
   }
 
+  /** Twins (or triplets): children of the same family unit with the same birth-order number. */
+  isTwin(a: string, b: string): boolean {
+    for (const ea of this.parentEdges(a)) {
+      const eb = this.edge(ea.parentId, b);
+      if (eb && ea.unionId === eb.unionId && ea.childOrder != null && ea.childOrder === eb.childOrder) return true;
+    }
+    return false;
+  }
+
   /**
    * Relative age of `b` compared with `a` among siblings: 'elder' if b is older, 'younger' if b is younger.
    * Uses birth dates when certain, else child_order under a shared parent, else null.

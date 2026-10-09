@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
 import { SIMPLE_FACTS } from '@/domain/family/personInput';
+import { siblingGroup } from '@/domain/family/birthOrder';
 import { getText, type LocalizedText } from '@/domain/localized/localized';
 import { currentFact, displayName, isUnknown, lifespan, type FamilyModel } from '@/domain/family/familyModel';
 import { useI18n } from '@/i18n/I18nProvider';
@@ -17,12 +18,13 @@ type Props = {
   onEdit: () => void;
   onDelete: () => void;
   onRelationship: () => void;
+  onBirthOrder: () => void;
   /** this device's "me" person, if set */
   meId?: string | null;
 };
 
 /** Profile panel. The graph node stays simple; details live here. */
-export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete, onRelationship, meId }: Props) {
+export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative, onEdit, onDelete, onRelationship, onBirthOrder, meId }: Props) {
   const { t, lang } = useI18n();
   const p = model.persons.get(personId);
   if (!p) return null;
@@ -36,7 +38,10 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
       .map((id) => ({ id, tag: u.status === 'divorced' || u.status === 'separated' ? `union.${u.status}` : null })),
   );
   const children = g.childEdges(personId).map((e) => ({ id: e.childId, tag: e.lineage === 'biological' || e.lineage === 'unknown' ? null : `lineage.${e.lineage}` }));
-  const siblings = g.siblings(personId).map((s) => ({ id: s.id, tag: s.kind === 'full' ? null : `sibling.${s.kind}` }));
+  const siblings = g
+    .siblings(personId)
+    .map((s) => ({ id: s.id, tag: g.isTwin(personId, s.id) ? 'sibling.twin' : s.kind === 'full' ? null : `sibling.${s.kind}` }));
+  const canOrder = (siblingGroup(g, personId)?.childIds.length ?? 0) >= 2;
 
   const text = (lt: LocalizedText | null | undefined) => getText(lt, lang)?.text ?? '';
   const nameIn = (forms: Record<string, { full_name: string }> | undefined) => (forms ? (forms[lang] ?? Object.values(forms)[0])?.full_name ?? '' : '');
@@ -105,6 +110,11 @@ export function PersonDrawer({ model, personId, onSelect, onClose, onAddRelative
         <RelativeList title={t('person.partners')} items={partners} model={model} onSelect={onSelect} />
         <RelativeList title={t('person.children')} items={children} model={model} onSelect={onSelect} />
         <RelativeList title={t('person.siblings')} items={siblings} model={model} onSelect={onSelect} />
+        {canOrder && (
+          <button type="button" onClick={onBirthOrder} className="text-sm text-amber-800 hover:underline">
+            ⇅ {t('person.birthOrder')}
+          </button>
+        )}
       </div>
     </aside>
   );

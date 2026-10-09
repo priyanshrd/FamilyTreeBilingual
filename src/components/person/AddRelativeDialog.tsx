@@ -8,7 +8,8 @@ import { transliterate } from '@/domain/language/transliterate';
 import { useI18n } from '@/i18n/I18nProvider';
 import { deviceSettings } from '@/services/deviceSettings';
 import type { StringKey } from '@/i18n/strings';
-import { addRelative, connectExisting, type Relation, type RelationOptions } from '@/services/repositories/personRepo';
+import { addRelative, connectExisting, saveBirthOrder, type Relation, type RelationOptions } from '@/services/repositories/personRepo';
+import { numberRows, placeNewSibling, rowsFromGroup, siblingGroup, type RelativePosition } from '@/domain/family/birthOrder';
 import { Button } from '@/components/ui/Button';
 import { Choice } from '@/components/ui/Choice';
 import { Dialog } from '@/components/ui/Dialog';
@@ -47,6 +48,7 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
   // shared
   const relation = step === 'connect' ? connectRelation : (kind?.relation ?? 'spouse');
   const [options, setOptions] = useState<RelationOptions>({});
+  const [position, setPosition] = useState<RelativePosition | 'unknown'>('unknown');
   const context = useRelationContext(model, anchorId, relation);
   const effectiveOptions = { ...context.defaults, ...options };
 
@@ -58,9 +60,18 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
 
   const save = useMutation({
     mutationFn: async () => {
-      if (step === 'connect') return (await connectExisting(anchorId, otherId!, relation, effectiveOptions)).person_id;
-      const toSave = deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input;
-      return (await addRelative(anchorId, relation, toSave, effectiveOptions)).person_id;
+      const before = siblingGroup(model.graph, anchorId);
+      const res =
+        step === 'connect'
+          ? await connectExisting(anchorId, otherId!, relation, effectiveOptions)
+          : await addRelative(anchorId, relation, deviceSettings.autoFill() ? fillOtherLanguage(input, transliterate) : input, effectiveOptions);
+      // optional birth order relative to the person they were added from
+      if (relation === 'sibling' && position !== 'unknown') {
+        const parentIds = res.placeholder_id ? [res.placeholder_id] : (effectiveOptions.parent_ids ?? before?.parentIds ?? []);
+        const rows = before ? rowsFromGroup(before) : [{ id: anchorId, twinWithPrevious: false }];
+        await saveBirthOrder(parentIds, numberRows(placeNewSibling(rows, anchorId, res.person_id, position)));
+      }
+      return res.person_id;
     },
     onSuccess: (id) => onDone(id),
   });
@@ -146,6 +157,23 @@ export function AddRelativeDialog({ model, anchorId, onClose, onDone }: Props) {
           )}
 
           {context.render(effectiveOptions, (o) => setOptions({ ...options, ...o }))}
+
+          {relation === 'sibling' && (
+            <div>
+              <Choice<RelativePosition | 'unknown'>
+                label={t('order.compared', { name: anchorName })}
+                value={position}
+                onChange={setPosition}
+                options={[
+                  { value: 'elder', label: t('order.elder') },
+                  { value: 'younger', label: t('order.younger') },
+                  { value: 'twin', label: t('order.twinOf') },
+                  { value: 'unknown', label: t('order.unknown') },
+                ]}
+              />
+              {step === 'new' && <p className="mt-1 text-xs text-stone-500">{t('order.dateWins')}</p>}
+            </div>
+          )}
 
           {save.isError && (
             <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">

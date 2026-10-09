@@ -19,6 +19,7 @@ export type KinStep = {
   lineage?: Lineage;
   half?: boolean;
   relativeAge?: RelativeAge;
+  twin?: boolean;
 };
 
 export type RelationshipKind = 'self' | 'blood' | 'affinal' | 'step' | 'none';
@@ -37,6 +38,8 @@ export type KinshipResult = {
   cousin: { degree: number; removed: number } | null;
   side: Side;
   half: boolean;
+  /** A and B are twins (only for a direct sibling relationship). */
+  twin: boolean;
   /** The path goes through an adoption. */
   adoptive: boolean;
   alternatives: KinshipResult[];
@@ -72,8 +75,10 @@ export class KinshipResolver {
 
     for (const seg of this.blood(a, b)) {
       const cousin = seg.up >= 2 && seg.down >= 2 ? { degree: Math.min(seg.up, seg.down) - 1, removed: Math.abs(seg.up - seg.down) } : null;
+      const base = fromSegment(seg);
       candidates.push({
-        ...fromSegment(seg),
+        ...base,
+        english: base.twin ? `twin_${base.english}` : base.english,
         kind: 'blood',
         generations: { up: seg.up, down: seg.down },
         cousin,
@@ -206,6 +211,7 @@ export class KinshipResolver {
         lineage: ex === 'adoptive' || ey === 'adoptive' ? 'adoptive' : ex,
         half,
         relativeAge: age,
+        twin: this.g.isTwin(x, y),
       });
       for (let i = 1; i < down; i++) steps.push(childStep(downPath[i]!, downPath[i + 1]!));
       personPath = [...upPath.slice(0, up), ...downPath.slice(1)];
@@ -263,6 +269,7 @@ export class KinshipResolver {
       cousin: null,
       side: null,
       half: false,
+      twin: false,
       adoptive: false,
       distance: 1,
       hops: 0,
@@ -401,6 +408,7 @@ export class KinshipResolver {
       cousin: null,
       side: meta.side,
       half,
+      twin: false,
       adoptive,
       distance: meta.distance,
       hops: meta.hops,
@@ -429,6 +437,7 @@ function none(): KinshipResult {
     cousin: null,
     side: null,
     half: false,
+    twin: false,
     adoptive: false,
     alternatives: [],
   };
@@ -446,6 +455,7 @@ function fromSegment(seg: Segment) {
     personPath: seg.personPath,
     side: seg.side,
     half: seg.half,
+    twin: seg.steps.length === 1 && Boolean(seg.steps[0]!.twin),
     adoptive: seg.adoptive,
   };
 }

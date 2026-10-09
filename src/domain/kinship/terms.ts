@@ -134,6 +134,12 @@ export function labelRelationship(result: KinshipResult, lang: string, overrides
     return { text, matchedKey: null, source: 'generated' };
   }
 
+  if (result.twin && lang === 'mr') {
+    const code = result.steps[0]?.code ?? 'Sib';
+    const text = overrides[`twin${code}`] ?? (code === 'B' ? 'जुळा भाऊ' : code === 'Z' ? 'जुळी बहीण' : 'जुळे भावंड');
+    return { text, matchedKey: null, source: 'default' };
+  }
+
   const found = lookupTerm(result.key, lang, overrides);
   let label: RelationshipLabel;
   if (found) label = found;

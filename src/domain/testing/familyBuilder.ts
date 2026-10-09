@@ -23,8 +23,10 @@ export class FamilyBuilder {
   /** Children of a union: an edge from every partner. */
   children(unionId: string, childIds: string[], lineage: Lineage = 'biological'): this {
     const u = this.unions.find((x) => x.id === unionId)!;
+    // birth order continues within the family unit across calls
+    const already = new Set(this.parentChild.filter((e) => e.unionId === unionId).map((e) => e.childId)).size;
     childIds.forEach((c, i) => {
-      for (const p of u.partnerIds) this.parentChild.push({ parentId: p, childId: c, lineage, unionId, childOrder: i + 1 });
+      for (const p of u.partnerIds) this.parentChild.push({ parentId: p, childId: c, lineage, unionId, childOrder: already + i + 1 });
     });
     return this;
   }

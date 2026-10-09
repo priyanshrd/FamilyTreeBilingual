@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AddRelativeDialog } from '@/components/person/AddRelativeDialog';
 import { DeletePersonDialog } from '@/components/person/DeletePersonDialog';
+import { BirthOrderDialog } from '@/components/person/BirthOrderDialog';
 import { EditPersonDialog } from '@/components/person/EditPersonDialog';
 import { PersonDrawer } from '@/components/person/PersonDrawer';
 import { LanguageToggle } from '@/components/LanguageToggle';
@@ -31,7 +32,7 @@ const FOCUS_DEPTH = 4;
 
 type View = 'family' | 'tree' | 'list';
 
-type Modal = { kind: 'relationship'; a: string | null; b: string | null } | { kind: 'add' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
+type Modal = { kind: 'relationship'; a: string | null; b: string | null } | { kind: 'add' } | { kind: 'order' } | { kind: 'edit' } | { kind: 'delete' } | { kind: 'first' } | { kind: 'settings' } | null;
 
 export function WorkspacePage() {
   const { t, lang } = useI18n();
@@ -229,6 +230,7 @@ export function WorkspacePage() {
             onAddRelative={() => setModal({ kind: 'add' })}
             onEdit={() => setModal({ kind: 'edit' })}
             onDelete={() => setModal({ kind: 'delete' })}
+            onBirthOrder={() => setModal({ kind: 'order' })}
             onRelationship={() => {
               const me = familyId ? deviceSettings.mePersonId(familyId) : null;
               setModal({ kind: 'relationship', a: me && me !== selectedId ? me : null, b: selectedId });
@@ -238,6 +240,9 @@ export function WorkspacePage() {
         )}
       </main>
 
+      {model && selectedId && modal?.kind === 'order' && (
+        <BirthOrderDialog model={model} personId={selectedId} onClose={() => setModal(null)} onDone={() => void afterChange(selectedId)} />
+      )}
       {model && familyId && modal?.kind === 'relationship' && (
         <RelationshipFinder
           model={model}

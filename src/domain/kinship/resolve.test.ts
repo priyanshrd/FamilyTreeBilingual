@@ -142,6 +142,19 @@ describe('findRelationship', () => {
     expect(rel('gf', 'son').alternatives).toEqual([]);
   });
 
+  it('recognises twins (same birth-order number)', () => {
+    const b = new FamilyBuilder().person('p', 'female').person('x', 'male').person('y', 'female').person('z', 'male');
+    const u = b.union('p');
+    for (const [c, order] of [['x', 1], ['y', 1], ['z', 2]] as const) {
+      b.parentChild.push({ parentId: 'p', childId: c, lineage: 'biological', unionId: u, childOrder: order });
+    }
+    const r = new KinshipResolver(b.build());
+    expect(r.find('x', 'y')).toMatchObject({ key: 'Z', english: 'twin_sister', twin: true });
+    expect(labelRelationship(r.find('x', 'y'), 'mr').text).toBe('जुळी बहीण');
+    expect(labelRelationship(r.find('y', 'x'), 'en').text).toBe('twin brother');
+    expect(r.find('x', 'z')).toMatchObject({ key: 'yB', twin: false });
+  });
+
   it('handles multiple spouses', () => {
     expect(rel('f', 'm').english).toBe('wife');
     expect(rel('f', 'f1w').english).toBe('wife');
