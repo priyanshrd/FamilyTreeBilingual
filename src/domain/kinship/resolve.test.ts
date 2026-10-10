@@ -205,12 +205,17 @@ describe('plain-language labels for distant cousins', () => {
     .person('mom', 'female')
     .person('me', 'male')
     .person('rahul', 'male')
-    .person('sid', 'male');
+    .person('sid', 'male')
+    .person('kid', 'female')
+    .person('priya', 'female')
+    .person('sidwife', 'female');
   b.children(b.union('indu'), ['suvarna', 'asha']);
   b.children(b.union('asha'), ['mom']);
   b.children(b.union('mom'), ['me']);
   b.children(b.union('suvarna'), ['rahul']);
-  b.children(b.union('rahul'), ['sid']);
+  b.children(b.union('rahul', 'priya'), ['sid']);
+  b.children(b.union('me'), ['kid']);
+  b.union('sid', 'sidwife');
   const r = new KinshipResolver(b.build());
 
   it('says "mother\'s cousin" instead of "first cousin once removed"', () => {
@@ -225,5 +230,18 @@ describe('plain-language labels for distant cousins', () => {
     const sid = r.find('me', 'sid');
     expect(labelRelationship(sid, 'en').text).toBe('second cousin');
     expect(labelRelationship(sid, 'mr').text).toBe('आईच्या मावसभावाचा मुलगा');
+  });
+
+  it('keeps it plain through marriages ("first cousin twice removed\'s wife" → "grandmother\'s cousin\'s wife")', () => {
+    const priya = r.find('kid', 'priya');
+    expect(priya.english).toContain('removed');
+    expect(labelRelationship(priya, 'en').text).toBe("grandmother's cousin's wife");
+    expect(labelRelationship(r.find('kid', 'rahul'), 'en').text).toBe("grandmother's cousin");
+    expect(labelRelationship(r.find('rahul', 'kid'), 'en').text).toBe("cousin's granddaughter");
+    expect(labelRelationship(r.find('me', 'sidwife'), 'en').text).toBe("second cousin's wife");
+    expect(labelRelationship(r.find('priya', 'me'), 'en').text).toBe("husband's cousin's son");
+    for (const [a, b] of [['kid', 'priya'], ['me', 'sidwife'], ['priya', 'me']] as const) {
+      expect(labelRelationship(r.find(a, b), 'en').text).not.toMatch(/removed|first cousin/);
+    }
   });
 });

@@ -8,6 +8,9 @@ import { Loading } from '@/components/ui/Status';
 import { errorMessage } from './AddRelativeDialog';
 import { recordChange } from '@/services/undo';
 
+/** In the confirmation, Delete (as well as Enter) confirms. */
+const DELETE_KEYS = ['Delete'];
+
 export function DeletePersonDialog({ person, onClose, onDone }: { person: PersonView; onClose: () => void; onDone: () => void }) {
   const { t, lang } = useI18n();
   const name = displayName(person, lang).text;
@@ -15,7 +18,7 @@ export function DeletePersonDialog({ person, onClose, onDone }: { person: Person
   const del = useMutation({ mutationFn: () => recordChange('delete', name, () => softDeletePerson(person.id)), onSuccess: onDone });
 
   return (
-    <Dialog title={t('delete.title', { name })} onClose={onClose}>
+    <Dialog title={t('delete.title', { name })} onClose={onClose} onEnter={() => !del.isPending && del.mutate()} enterKeys={DELETE_KEYS}>
       {impact.isPending && <Loading />}
       {impact.data && (
         <div className="space-y-3">
@@ -38,7 +41,7 @@ export function DeletePersonDialog({ person, onClose, onDone }: { person: Person
         <Button variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>
-        <Button className="bg-red-700 hover:bg-red-800" disabled={!impact.data || del.isPending} onClick={() => del.mutate()}>
+        <Button className="bg-red-700 hover:bg-red-800" disabled={del.isPending} onClick={() => del.mutate()}>
           {t('delete.confirm')}
         </Button>
       </div>

@@ -239,9 +239,11 @@ export async function refreshAutoNames(people: PersonView[], convert: (text: str
       const from = form?.generated_from as Lang | null | undefined;
       const source = from ? p.names[from] : undefined;
       if (!form || form.source !== 'auto' || !source || source.source === 'auto') continue;
-      // only names made by OLDER rules: an out-of-date copy of the app must not undo a newer one
-      if (providerVersion(form.provider) >= TRANSLITERATION_VERSION) continue;
       const text = convert(source.full_name, lang);
+      // Rewritten when made by OLDER rules, or when the family has since corrected one of its words
+      // (same rules: every device gets the same answer from the same data). An out-of-date copy of
+      // the app can never undo a newer one: the database ignores older rules.
+      if (providerVersion(form.provider) >= TRANSLITERATION_VERSION && text === form.full_name) continue;
       const res = await supabase
         .from('person_name_forms')
         .update({ ...splitName(text), provider: TRANSLITERATION_PROVIDER })
@@ -249,7 +251,7 @@ export async function refreshAutoNames(people: PersonView[], convert: (text: str
         .eq('lang', lang)
         .eq('source', 'auto');
       if (res.error) throw res.error;
-      if (text !== form.full_name) changed++;
+      changed++;
     }
   }
   return changed;

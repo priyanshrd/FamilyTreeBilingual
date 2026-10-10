@@ -3,7 +3,7 @@
 //   family override → built-in default → (English) readable id / (other languages) composed path.
 // Keys are kinship paths (see codes.ts). Lookup tries the exact key first, then generalisations.
 import { describeKey, keyVariants } from './codes';
-import { humanizeEnglishId } from './english';
+import { bloodEnglishId, humanizeEnglishId } from './english';
 import type { KinshipResult } from './resolve';
 
 export type TermTable = Record<string, string>;
@@ -190,27 +190,60 @@ const genderOf = (code: string): 'm' | 'f' | 'n' => {
   return ['F', 'B', 'S', 'H'].includes(c) ? 'm' : ['M', 'Z', 'D', 'W'].includes(c) ? 'f' : 'n';
 };
 
+const ORDINAL = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+const PARENT = new Set(['F', 'M', 'P']);
+const CHILD = new Set(['S', 'D', 'C']);
+const SPOUSE = new Set(['H', 'W', 'Sp']);
+
+/** "father" / "grandmother" / "great-grandfather" for an ancestor `n` generations up, by their code. */
+function ancestorWord(code: string, n: number): string {
+  const base = code === 'F' ? 'father' : code === 'M' ? 'mother' : 'parent';
+  return n === 1 ? base : `${'great-'.repeat(n - 2)}grand${base}`;
+}
+
+/** Plain English for one blood stretch of a path (parents, maybe a sibling, children). */
+function plainBlood(codes: string[], half = false): string {
+  const base = codes.map(stripAgeLetter);
+  const sib = base.some((c) => !PARENT.has(c) && !CHILD.has(c)) ? 1 : 0;
+  const up = base.filter((c) => PARENT.has(c)).length + sib;
+  const down = base.filter((c) => CHILD.has(c)).length + sib;
+  const last = codes[codes.length - 1]!;
+  if (up < 2 || down < 2) {
+    const side = up >= 2 ? (base[0] === 'F' ? 'paternal' : base[0] === 'M' ? 'maternal' : null) : null;
+    const g = genderOf(last);
+    return humanizeEnglishId(bloodEnglishId(up, down, g === 'm' ? 'male' : g === 'f' ? 'female' : 'unknown', side, half));
+  }
+  // cousins, without "once / twice removed"
+  const degree = Math.min(up, down) - 1;
+  const removed = Math.abs(up - down);
+  const cousin = `${half ? 'half-' : ''}${degree === 1 ? 'cousin' : `${ORDINAL[degree] ?? `${degree}th`} cousin`}`;
+  if (removed === 0) return cousin;
+  if (up > down) return `${ancestorWord(base[removed - 1]!, removed)}'s ${cousin}`; // "grandmother's cousin"
+  const g = genderOf(last);
+  const child = g === 'm' ? 'son' : g === 'f' ? 'daughter' : 'child';
+  return `${cousin}'s ${removed === 1 ? child : `${'great-'.repeat(removed - 2)}grand${child}`}`; // "cousin's daughter"
+}
+
 /**
- * English without genealogists' jargon: "first cousin once removed" becomes "mother's cousin" or
- * "cousin's daughter"; "first cousin" is just "cousin".
+ * English without genealogists' jargon, also through marriages: "first cousin twice removed's
+ * husband" becomes "grandmother's cousin's husband"; "first cousin" is just "cousin".
  */
 function plainEnglish(result: KinshipResult): string {
-  const c = result.cousin;
-  if (!c || result.kind !== 'blood' || !result.generations) return humanizeEnglishId(result.english);
-  const ordinal = result.english.split('_cousin')[0]!;
-  const cousin = `${result.half ? 'half-' : ''}${c.degree === 1 ? 'cousin' : `${ordinal} cousin`}`;
-  if (c.removed === 0) return cousin;
-  const codes = result.steps.map((s) => s.code);
-  if (result.generations.up > result.generations.down) {
-    // they are older: "mother's cousin", "father's mother's cousin"
-    const chain = codes.slice(0, c.removed).map((code) => ({ F: 'father', M: 'mother' })[code] ?? 'parent');
-    return `${chain.join("'s ")}'s ${cousin}`;
+  if (!result.english.includes('cousin')) return humanizeEnglishId(result.english);
+  const parts: string[] = [];
+  let stretch: string[] = [];
+  const flush = () => {
+    if (stretch.length) parts.push(plainBlood(stretch, result.kind === 'blood' && result.half));
+    stretch = [];
+  };
+  for (const s of result.steps) {
+    if (SPOUSE.has(s.code)) {
+      flush();
+      parts.push(s.code === 'H' ? 'husband' : s.code === 'W' ? 'wife' : 'spouse');
+    } else stretch.push(s.code);
   }
-  // they are younger: "cousin's daughter", "cousin's grandson"
-  const g = genderOf(codes[codes.length - 1]!);
-  const child = g === 'm' ? 'son' : g === 'f' ? 'daughter' : 'child';
-  const word = c.removed === 1 ? child : `${'great-'.repeat(c.removed - 2)}grand${child}`;
-  return `${cousin}'s ${word}`;
+  flush();
+  return parts.join("'s ");
 }
 
 /** Marathi oblique (possessor) form of a term: भाऊ → भावा, बहीण → बहिणी, काका → काकां. */

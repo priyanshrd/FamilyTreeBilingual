@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { formatFuzzyDate } from '@/domain/dates/fuzzyDate';
 import { SIMPLE_FACTS } from '@/domain/family/personInput';
@@ -62,6 +62,7 @@ export function PersonDrawer({
   const [expanded, setExpanded] = useState(false);
   const p = model.persons.get(personId);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [viewing, setViewing] = useState(false);
   const photoUrls = usePhotoUrls(p?.photo ? [p.photo.path] : []);
   const photo = useMutation({
     mutationFn: ({ file }: { file: File | null }) =>
@@ -121,19 +122,26 @@ export function PersonDrawer({
       >
         <span className="h-1.5 w-14 rounded-full bg-stone-400" />
       </button>
-      <div className="flex items-start justify-between gap-3 border-b border-stone-200 p-4 pt-1 sm:pt-4">
+      <div className="flex items-start justify-between gap-3 border-b border-amber-900/10 bg-gradient-to-b from-[#fff3df] to-white p-4 pt-1 sm:pt-5">
         {!unknown && (
           <button
             type="button"
-            onClick={() => fileInput.current?.click()}
+            onClick={() => (p.photo ? setViewing(true) : fileInput.current?.click())}
             disabled={photo.isPending}
-            aria-label={p.photo ? t('photo.change') : t('photo.add')}
+            aria-label={p.photo ? t('photo.view') : t('photo.add')}
             className="group relative shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-amber-700"
           >
-            <Avatar url={p.photo ? photoUrls.get(p.photo.path) : null} name={displayName(p, lang).text} size={72} className={photo.isPending ? 'opacity-40' : ''} />
-            <span className="absolute -right-1 -bottom-1 flex size-7 items-center justify-center rounded-full border border-stone-200 bg-white text-sm shadow-sm" aria-hidden>
-              📷
-            </span>
+            <Avatar
+              url={p.photo ? photoUrls.get(p.photo.path) : null}
+              name={displayName(p, lang).text}
+              size={80}
+              className={`shadow-md ring-4 ring-white ${photo.isPending ? 'opacity-40' : ''}`}
+            />
+            {!p.photo && (
+              <span className="absolute -right-1 -bottom-1 flex size-8 items-center justify-center rounded-full border border-stone-200 bg-white text-sm shadow-sm" aria-hidden>
+                📷
+              </span>
+            )}
           </button>
         )}
         <input
@@ -149,7 +157,7 @@ export function PersonDrawer({
           }}
         />
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl font-semibold">{unknown ? t('person.unknownParent') : displayName(p, lang).text}</h2>
+          <h2 className="font-display text-2xl leading-tight font-bold text-stone-900">{unknown ? t('person.unknownParent') : displayName(p, lang).text}</h2>
           {p.names[other] && <p className="text-stone-500">{p.names[other].full_name}</p>}
           {lifespan(p, lang) && <p className="mt-1 text-sm text-stone-500">{lifespan(p, lang)}</p>}
           {meId === personId ? (
@@ -234,6 +242,21 @@ export function PersonDrawer({
           </button>
         )}
       </div>
+      {viewing && p.photo && (
+        <PhotoViewer
+          url={photoUrls.get(p.photo.path)}
+          name={displayName(p, lang).text}
+          onClose={() => setViewing(false)}
+          onChange={() => {
+            setViewing(false);
+            fileInput.current?.click();
+          }}
+          onRemove={() => {
+            setViewing(false);
+            photo.mutate({ file: null });
+          }}
+        />
+      )}
     </aside>
   );
 }
@@ -271,5 +294,40 @@ function RelativeList({
         })}
       </ul>
     </section>
+  );
+}
+
+/** The photo at full size over everything, with Change / Remove. Esc or the background closes it. */
+function PhotoViewer({ url, name, onClose, onChange, onRemove }: { url?: string; name: string; onClose: () => void; onChange: () => void; onRemove: () => void }) {
+  const { t } = useI18n();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div role="dialog" aria-label={t('photo.of', { name })} className="fixed inset-0 z-[70] flex flex-col bg-stone-950/90 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex items-center justify-between gap-3 text-white">
+        <p className="font-display text-lg font-semibold">{name}</p>
+        <button type="button" onClick={onClose} aria-label={t('person.close')} className="flex size-11 items-center justify-center rounded-full text-3xl leading-none hover:bg-white/10">
+          ×
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center py-4">
+        {url ? (
+          <img src={url} alt={t('photo.of', { name })} className="max-h-full max-w-full rounded-xl object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+        ) : (
+          <p className="text-stone-300">{t('common.loading')}</p>
+        )}
+      </div>
+      <div className="flex justify-center gap-3" onClick={(e) => e.stopPropagation()}>
+        <Button variant="secondary" onClick={onChange}>
+          📷 {t('photo.change')}
+        </Button>
+        <Button variant="secondary" className="text-red-700" onClick={onRemove}>
+          {t('photo.remove')}
+        </Button>
+      </div>
+    </div>
   );
 }

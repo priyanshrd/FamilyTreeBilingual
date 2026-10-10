@@ -47,3 +47,11 @@ describe('upcomingBirthdays', () => {
     expect(upcomingBirthdays([born('leap', 2000, 2, 29)], new Date(2027, 1, 20)).at(0)).toMatchObject({ inDays: 8, turns: 27 });
   });
 });
+
+describe('a whole year of birthdays', () => {
+  it('lists everyone over the next 12 months in date order, including ones just passed (next year)', () => {
+    const list = upcomingBirthdays([born('jan', 1990, 1, 5), born('yesterday', 1960, 10, 8), born('nov', 1980, 11, 20), born('today', 1958, 10, 9)], today, 366);
+    expect(list.map((b) => b.id)).toEqual(['today', 'nov', 'jan', 'yesterday']);
+    expect(list.at(-1)).toMatchObject({ inDays: 364, turns: 67 });
+  });
+});

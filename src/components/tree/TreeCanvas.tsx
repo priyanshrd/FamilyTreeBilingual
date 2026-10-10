@@ -37,53 +37,96 @@ type PersonData = {
   photo?: string;
   /** relationship to this device's "me" */
   relation?: string;
-  /** labels for the "open their family" badge */
+  /** this person's family is opened inside the view ("− family" folds it away) */
+  expanded?: boolean;
+  /** labels for the "+ family" / "− family" badge */
   moreShort?: string;
   moreLabel?: string;
 };
 
-const GENDER_ACCENT: Record<string, string> = {
-  male: 'border-l-sky-600',
-  female: 'border-l-rose-500',
-  other: 'border-l-violet-500',
-  unknown: 'border-l-stone-300',
+/** Gender is shown by a thin coloured edge and the tint of the initials circle. */
+const GENDER_TONE: Record<string, { edge: string; avatar: string }> = {
+  male: { edge: 'border-l-sky-500', avatar: 'bg-sky-100 text-sky-800 ring-sky-200' },
+  female: { edge: 'border-l-rose-400', avatar: 'bg-rose-100 text-rose-800 ring-rose-200' },
+  other: { edge: 'border-l-violet-400', avatar: 'bg-violet-100 text-violet-800 ring-violet-200' },
+  unknown: { edge: 'border-l-stone-300', avatar: 'bg-stone-100 text-stone-600 ring-stone-200' },
 };
 
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((w) => w.match(/\p{L}[\p{M}]*/u)?.[0] ?? '')
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('');
+
+// Connection points: lines from parents arrive on top, lines to children leave from the bottom,
+// spouse lines join at the sides (whole tree). All invisible.
+const H = '!invisible !min-h-0 !min-w-0 !size-px';
+function Handles() {
+  return (
+    <>
+      <Handle id="t-t" type="target" position={Position.Top} className={H} />
+      <Handle id="l-t" type="target" position={Position.Left} className={H} />
+      <Handle id="r-t" type="target" position={Position.Right} className={H} />
+      <Handle id="b-s" type="source" position={Position.Bottom} className={H} />
+      <Handle id="l-s" type="source" position={Position.Left} className={H} />
+      <Handle id="r-s" type="source" position={Position.Right} className={H} />
+    </>
+  );
+}
+
 const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>>) {
+  const tone = GENDER_TONE[data.gender] ?? GENDER_TONE.unknown!;
   return (
     <div
       style={{ width: PERSON_W, height: PERSON_H }}
       title={data.name}
-      className={`relative flex items-center gap-[10px] rounded-lg border border-l-[6px] bg-white px-[10px] shadow-sm ${GENDER_ACCENT[data.gender]} ${
-        data.selected ? 'ring-2 ring-amber-700' : data.highlight ? 'bg-sky-50 ring-2 ring-sky-600' : ''
-      } ${data.placeholder ? 'border-2 border-dashed border-stone-400 bg-stone-50' : 'border-stone-300'}`}
+      className={`relative flex items-center gap-[12px] rounded-2xl border border-l-[5px] px-[12px] transition-shadow ${tone.edge} ${
+        data.placeholder ? 'border-2 border-dashed border-stone-300 bg-stone-50/90' : 'border-stone-200 bg-white'
+      } ${
+        data.selected
+          ? 'shadow-[0_0_0_3px_rgba(180,83,9,0.55),0_8px_20px_-6px_rgba(120,53,15,0.35)]'
+          : data.highlight
+            ? 'bg-sky-50 shadow-[0_0_0_3px_rgba(2,132,199,0.6)]'
+            : 'shadow-[0_1px_2px_rgba(41,37,36,0.06),0_4px_12px_-4px_rgba(41,37,36,0.12)] hover:shadow-[0_2px_4px_rgba(41,37,36,0.08),0_10px_20px_-8px_rgba(41,37,36,0.2)]'
+      }`}
     >
-      <Handle type="target" position={Position.Top} className="!invisible" />
-      {data.photo && <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-[48px] shrink-0 rounded-full object-cover" />}
+      {data.photo ? (
+        <img src={data.photo} alt="" draggable={false} crossOrigin="anonymous" className="size-[48px] shrink-0 rounded-full object-cover ring-2 ring-white shadow" />
+      ) : (
+        !data.placeholder && (
+          <span aria-hidden className={`flex size-[48px] shrink-0 items-center justify-center rounded-full text-[17px] font-semibold ring-2 ${tone.avatar}`}>
+            {initialsOf(data.name)}
+          </span>
+        )
+      )}
       <span className="flex min-w-0 flex-col">
-        <span className={`line-clamp-2 text-[16px] leading-tight font-medium ${data.fallback ? 'text-stone-600 italic' : 'text-stone-900'}`}>{data.name}</span>
+        <span className={`line-clamp-2 text-[16px] leading-tight font-semibold ${data.fallback ? 'text-stone-500 italic' : 'text-stone-900'}`}>{data.name}</span>
         {data.years && <span className="truncate text-[14px] text-stone-600">{data.years}</span>}
         {data.relation && <span className="truncate text-[14px] font-medium text-sky-800">{data.relation}</span>}
       </span>
-      {data.more && (
+      {(data.more || data.expanded) && (
         <span
           data-open-family
           title={data.moreLabel}
-          className="nodrag absolute -top-3 -right-3 flex h-[28px] cursor-pointer items-center gap-0.5 rounded-full border-2 border-white bg-amber-700 px-2 text-[12px] font-medium text-white shadow hover:bg-amber-800"
+          className={`nodrag absolute -top-3 -right-3 flex h-[28px] cursor-pointer items-center gap-0.5 rounded-full border-2 border-white px-2.5 text-[12px] font-semibold shadow-md ${
+            data.expanded ? 'bg-white text-amber-800 ring-1 ring-amber-700/40 hover:bg-amber-50' : 'bg-amber-700 text-white hover:bg-amber-800'
+          }`}
         >
-          + {data.moreShort}
+          {data.expanded ? '−' : '+'} {data.moreShort}
         </span>
       )}
-      <Handle type="source" position={Position.Bottom} className="!invisible" />
+      <Handles />
     </div>
   );
 });
 
-const UnionNode = memo(function UnionNode() {
+/** The dot where a couple's line meets the line down to their children. */
+const UnionNode = memo(function UnionNode({ data }: NodeProps<Node<{ divorced?: boolean }>>) {
   return (
-    <div className="size-2.5 rounded-full bg-stone-500">
-      <Handle type="target" position={Position.Top} className="!invisible" />
-      <Handle type="source" position={Position.Bottom} className="!invisible" />
+    <div className={`size-[10px] rounded-full border-2 bg-[#fffaf2] ${data?.divorced ? 'border-stone-400' : 'border-[#8a6a48]'}`}>
+      <Handles />
     </div>
   );
 });
@@ -91,10 +134,11 @@ const UnionNode = memo(function UnionNode() {
 const nodeTypes = { person: PersonNode, union: UnionNode };
 
 // Edge appearance is UI metadata derived from relationship type; nothing here is stored.
+const LINE = '#8a6a48'; // warm brown, like ink on old paper
 function edgeStyle(e: LaidOutEdge): React.CSSProperties {
-  if (e.kind === 'partner') return { stroke: '#78716c', strokeWidth: 1.5, strokeDasharray: e.ended ? '6 4' : undefined };
+  if (e.kind === 'partner') return { stroke: e.ended ? '#a8a29e' : LINE, strokeWidth: 2, strokeDasharray: e.ended ? '6 4' : undefined };
   const dash = { biological: undefined, unknown: undefined, adoptive: '7 4', step: '2 4', foster: '8 3 2 3', guardian: '8 3 2 3', mixed: '7 4' }[e.lineage];
-  return { stroke: '#57534e', strokeWidth: 1.5, strokeDasharray: dash };
+  return { stroke: LINE, strokeWidth: 2, strokeDasharray: dash, strokeLinejoin: 'round' };
 }
 
 /** How each view was left, for this visit: boxes moved by hand and the zoom/scroll. */
@@ -111,7 +155,7 @@ function fitOptions() {
 
 type Props = {
   model: FamilyModel;
-  layout: TreeLayout & { more?: Set<string> };
+  layout: TreeLayout & { more?: Set<string>; expanded?: Set<string> };
   selectedId: string | null;
   /** people on a relationship path, highlighted together with the lines between them */
   highlight?: Set<string>;
@@ -121,15 +165,17 @@ type Props = {
   /** identifies what is shown (view + person); the tree is re-fitted only when it changes */
   viewKey?: string;
   onSelect: (id: string) => void;
-  /** show this person's own family (the "+ family" badge, or a double-click) */
+  /** show this person's own family as a new view (double-click) */
   onOpenFamily?: (id: string) => void;
+  /** open / fold away this person's family inside the current view (the "+ family" badge) */
+  onToggleFamily?: (id: string) => void;
   /** profile thumbnail per person */
   photoUrl?: (personId: string) => string | undefined;
   /** relationship of each person to this device's "me" */
   relations?: Map<string, string>;
 };
 
-function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewKey = '', onSelect, onOpenFamily, photoUrl, relations }: Props) {
+function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewKey = '', onSelect, onOpenFamily, onToggleFamily, photoUrl, relations }: Props) {
   const { lang, t } = useI18n();
   const flow = useReactFlow();
   const textSize = useTextSize();
@@ -148,7 +194,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
   const toNode = useCallback(
     (n: TreeLayout['nodes'][number], position?: { x: number; y: number }): Node => {
       if (n.kind === 'union') {
-        return { id: `u:${n.id}`, type: 'union', position: position ?? { x: n.x, y: n.y }, data: {}, draggable: false, selectable: false };
+        return { id: `u:${n.id}`, type: 'union', position: position ?? { x: n.x, y: n.y }, data: { divorced: n.divorced }, draggable: false, selectable: false };
       }
       const p = model.persons.get(n.id);
       const name = displayName(p, lang);
@@ -167,13 +213,14 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
           highlight: Boolean(highlight?.has(n.id)),
           photo: photoUrl?.(n.id),
           relation: relations?.get(n.id),
+          expanded: Boolean(layout.expanded?.has(n.id)),
           moreShort: t('tree.moreShort'),
-          moreLabel: t('tree.moreLabel', { name: name.text }),
+          moreLabel: layout.expanded?.has(n.id) ? t('tree.lessLabel', { name: name.text }) : t('tree.moreLabel', { name: name.text }),
         } satisfies PersonData,
-        ariaLabel: name.text,
+        ariaLabel: isUnknown(p) ? t('person.unknownParent') : name.text,
       };
     },
-    [model, lang, t, selectedId, layout.more, highlight, photoUrl, relations],
+    [model, lang, t, selectedId, layout.more, layout.expanded, highlight, photoUrl, relations],
   );
 
   // Nodes are local state so single boxes can be dragged. A new layout resets positions;
@@ -247,7 +294,10 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         id: e.id,
         source: e.source,
         target: e.target,
+        sourceHandle: e.sourceHandle ?? 'b-s',
+        targetHandle: e.targetHandle ?? 't-t',
         type: e.kind === 'partner' ? 'straight' : 'smoothstep',
+        pathOptions: e.kind === 'partner' ? undefined : { borderRadius: 14 },
         style: hot ? { ...edgeStyle(e), stroke: '#0284c7', strokeWidth: 3 } : edgeStyle(e),
         zIndex: hot ? 1 : 0,
         selectable: false,
@@ -319,9 +369,12 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
 
   useEffect(() => {
     if (!centerOn) return;
-    focus(centerOn, Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale()));
+    // "id#stamp": the same person can be asked for again (e.g. after opening their family)
+    const id = centerOn.split('#')[0]!;
+    // wait a frame so a just-changed layout is drawn before moving to it
+    requestAnimationFrame(() => focus(id, Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale())));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when asked to
-  }, [centerOn, layout, flow]);
+  }, [centerOn]);
 
   // A new text size changes the readable zoom range: fit again.
   const firstTextSize = useRef(textSize);
@@ -383,10 +436,14 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         onNodeClick={(event, node) => {
           if (node.type !== 'person') return;
           const id = node.id.slice(2);
-          if ((event.target as HTMLElement).closest('[data-open-family]') && onOpenFamily) onOpenFamily(id);
+          const badge = (event.target as HTMLElement).closest('[data-open-family]');
+          if (badge && onToggleFamily) onToggleFamily(id);
+          else if (badge && onOpenFamily) onOpenFamily(id);
           else onSelect(id);
         }}
         zoomOnDoubleClick={false}
+        // the tree never deletes on its own; Delete opens the app's confirmation instead
+        deleteKeyCode={null}
         fitView
         fitViewOptions={fitOptions()}
         minZoom={0.1}
@@ -398,7 +455,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         zoomOnPinch
         panOnDrag
       >
-        <Background gap={24} color="#e7e5e4" />
+        <Background gap={22} size={1.4} color="#e4d9c7" bgColor="#fbf7f0" />
         <Controls showInteractive={false} fitViewOptions={fitOptions()} className="tree-controls" />
       </ReactFlow>
     </div>

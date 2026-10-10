@@ -30,7 +30,7 @@ export function BirthOrderDialog({ model, personId, onClose, onDone }: { model: 
   };
 
   return (
-    <Dialog title={t('order.title')} onClose={onClose}>
+    <Dialog title={t('order.title')} onClose={onClose} onEnter={() => group && !save.isPending && save.mutate()}>
       <p className="mb-4 text-sm text-stone-600">{t('order.help')}</p>
       <ol className="space-y-2">
         {rows.map((r, i) => {

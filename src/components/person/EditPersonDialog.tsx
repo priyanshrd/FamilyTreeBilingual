@@ -74,8 +74,14 @@ export function EditPersonDialog({
     onSuccess: onDone,
   });
 
+  function submit() {
+    const e = validatePersonInput(input);
+    setErrors(e);
+    if (!Object.keys(e).length) save.mutate();
+  }
+
   return (
-    <Dialog title={person ? displayName(person, lang).text : t('person.add')} onClose={onClose} wide>
+    <Dialog title={person ? displayName(person, lang).text : t('person.add')} onClose={onClose} wide onEnter={() => !save.isPending && submit()}>
       <PersonEditor input={input} setInput={setInput} errors={errors} />
       {save.isError && (
         <p role="alert" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">
@@ -86,14 +92,7 @@ export function EditPersonDialog({
         <Button variant="secondary" onClick={onClose}>
           {t('common.cancel')}
         </Button>
-        <Button
-          disabled={save.isPending}
-          onClick={() => {
-            const e = validatePersonInput(input);
-            setErrors(e);
-            if (!Object.keys(e).length) save.mutate();
-          }}
-        >
+        <Button disabled={save.isPending} onClick={submit}>
           {save.isPending ? t('person.saving') : t('person.save')}
         </Button>
       </div>

@@ -2,10 +2,14 @@
 
 @theme {
   --font-sans: 'Noto Sans', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  /* headings: a warm serif in both scripts */
+  --font-display: 'Noto Serif', 'Noto Serif Devanagari', Georgia, serif;
+  /* page colour: warm paper */
+  --color-paper: #fbf7f0;
 }
 
 body {
-  @apply bg-stone-50 text-stone-900 antialiased;
+  @apply bg-paper text-stone-900 antialiased;
 }
 
 /* tree zoom buttons: finger-sized */

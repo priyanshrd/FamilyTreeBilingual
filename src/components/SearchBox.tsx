@@ -14,6 +14,8 @@ export function SearchBox({ model, onPick }: { model: FamilyModel; onPick: (id: 
     onPick(id);
     setQ('');
     setActive(0);
+    // done searching: let go of the keyboard, so keys like Delete act on the chosen person
+    (document.activeElement as HTMLElement | null)?.blur();
   }
 
   return (

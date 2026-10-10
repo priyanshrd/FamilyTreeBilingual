@@ -5,6 +5,7 @@ import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/TextField';
 import { useI18n } from '@/i18n/I18nProvider';
+import { Emblem } from '@/components/ui/Emblem';
 
 export function LoginPage() {
   const { t } = useI18n();
@@ -27,12 +28,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-stone-50 px-4">
+    <div className="flex min-h-screen flex-col bg-[radial-gradient(ellipse_at_top,#fff3df,transparent_60%)] bg-paper px-4">
       <div className="flex justify-end py-3">
         <LanguageToggle />
       </div>
       <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center pb-24">
-        <h1 className="text-3xl font-semibold text-amber-900">{t('app.title')}</h1>
+        <Emblem size={64} />
+        <h1 className="mt-4 font-display text-4xl font-bold tracking-tight text-[#7c2d12]">{t('app.title')}</h1>
         <p className="mt-2 text-stone-600">{t('login.subheading')}</p>
         <form onSubmit={onSubmit} className="mt-8 space-y-4">
           {/* Hidden username helps password managers remember the shared login. */}

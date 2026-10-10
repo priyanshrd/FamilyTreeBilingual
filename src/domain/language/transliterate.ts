@@ -28,6 +28,14 @@ const DICTIONARY: string[][] = [
   ['Dadgonda', 'Dadagonda', 'दादगोंडा'], ['Ellappa', 'एलप्पा'], ['Tavanappa', 'तवनप्पा'], ['Tatya', 'तात्या'], ['Appa', 'आप्पा'],
   ['Anna', 'अण्णा'], ['Nana', 'नाना'], ['Bapu', 'बापू'], ['Shrikant', 'श्रीकांत'], ['Shrinivas', 'Shriniwas', 'श्रीनिवास'],
   ['Shriram', 'श्रीराम'], ['Gangappa', 'गंगाप्पा'], ['Sangappa', 'संगप्पा'], ['Basappa', 'बसप्पा'], ['Mallappa', 'मल्लप्पा'],
+  ['Parmaj', 'पर्माज'], ['Bhim', 'Bheem', 'भीम'], ['Anand', 'आनंद'], ['Anandi', 'आनंदी'],
+  // names often followed by -bai (Shantabai, Kashibai, …): the long आ / ई cannot be told from English spelling
+  ['Shanta', 'शांता'], ['Kashi', 'काशी'], ['Gangu', 'गंगू'], ['Ganga', 'गंगा'], ['Jija', 'जिजा'], ['Tara', 'तारा'], ['Radha', 'राधा'],
+  ['Ahilya', 'अहिल्या'], ['Yamuna', 'यमुना'], ['Goda', 'गोदा'], ['Bhagirathi', 'भागीरथी'], ['Parvati', 'पार्वती'],
+  ['Saraswati', 'सरस्वती'], ['Sakhu', 'सखू'], ['Rakhma', 'रखमा'], ['Indira', 'इंदिरा'], ['Kusum', 'कुसुम'], ['Sumati', 'सुमती'],
+  ['Shevanta', 'शेवंता'], ['Champa', 'चंपा'], ['Chandra', 'चंद्रा'], ['Bhama', 'भामा'], ['Manjula', 'मंजुळा'], ['Malati', 'मालती'],
+  ['Vatsala', 'वत्सला'], ['Sulochana', 'सुलोचना'], ['Kausalya', 'कौसल्या'], ['Sarja', 'सरजा'], ['Hira', 'हिरा'], ['Mukta', 'मुक्ता'],
+  ['Shantaram', 'शांताराम'], ['Kashinath', 'काशीनाथ'], ['Shamrao', 'शामराव'], ['Shyam', 'Sham', 'श्याम'], ['Baburao', 'बाबूराव'],
   // honorifics and kinship words used in names
   ['Rao', 'राव'], ['Bai', 'बाई'], ['Saheb', 'साहेब'], ['Bhau', 'भाऊ'], ['Tai', 'ताई'], ['Aai', 'आई'], ['Baba', 'बाबा'], ['Kaka', 'काका'],
   ['Mama', 'मामा'], ['Mavshi', 'मावशी'], ['Aatya', 'Atya', 'आत्या'], ['Aaji', 'Aji', 'आजी'], ['Ajoba', 'Aajoba', 'आजोबा'],
@@ -49,6 +57,18 @@ const DICTIONARY: string[][] = [
   ['Kashyap', 'कश्यप'], ['Bharadwaj', 'भारद्वाज'], ['Vashishtha', 'Vashisth', 'वसिष्ठ'], ['Khandoba', 'खंडोबा'],
   ['Tuljabhavani', 'Tulja Bhavani', 'तुळजाभवानी'], ['Ambabai', 'अंबाबाई'], ['Jyotiba', 'ज्योतिबा'], ['Ganpati', 'Ganapati', 'गणपती'],
 ];
+
+/**
+ * Words the family has spelled by hand: when a name's other-language spelling was typed or corrected,
+ * its words are learned and used before the built-in rules (set from the family's data, see
+ * learnFromNames). So a correction made once — शांताबाई for Shantabai — applies to every similar name.
+ */
+let learnedEnToMr = new Map<string, string>();
+let learnedMrToEn = new Map<string, string>();
+export function setLearnedWords(enToMr: Map<string, string>, mrToEn: Map<string, string>) {
+  learnedEnToMr = enToMr;
+  learnedMrToEn = mrToEn;
+}
 
 const LATIN_TO_DEVA = new Map<string, string>();
 const DEVA_TO_LATIN = new Map<string, string>();
@@ -107,6 +127,8 @@ const SUFFIXES: [string, string][] = [
 
 function latinWordToDeva(word: string): string {
   const lower = word.toLowerCase();
+  const learned = learnedEnToMr.get(lower);
+  if (learned) return learned;
   const known = LATIN_TO_DEVA.get(lower);
   if (known) return known;
   if (lower.startsWith('shri') && lower.length > 5) return 'श्री' + latinWordToDeva(lower.slice(4));
@@ -165,8 +187,13 @@ const DEVA_SIGN: Record<string, string> = { 'ा': 'a', 'ि': 'i', 'ी': 'i', 
 type Syl = { cons: string; vowel: string | null; inherent: boolean; cluster?: boolean };
 
 function devaWordToLatin(word: string): string {
+  const learned = learnedMrToEn.get(word);
+  if (learned) return learned;
   const known = DEVA_TO_LATIN.get(word);
   if (known) return known;
+  for (const [suffix, deva] of SUFFIXES) {
+    if (word.endsWith(deva) && [...word].length - [...deva].length >= 2) return devaWordToLatin(word.slice(0, -deva.length)) + suffix;
+  }
   // ज्ञ is pronounced "dny" in Marathi; क्ष is "ksh"
   const w = word.replace(/ज्ञ/g, '\u0001').replace(/क्ष/g, '\u0002');
   const syls: Syl[] = [];
@@ -248,7 +275,7 @@ export function transliterate(text: string, to: 'mr' | 'en'): string {
  * change: a device only rewrites an automatic name made by an OLDER version, so a device still running
  * an older copy of the app can never undo the work of a newer one (the database enforces this too).
  */
-export const TRANSLITERATION_VERSION = 2;
+export const TRANSLITERATION_VERSION = 3;
 export const TRANSLITERATION_PROVIDER = `builtin-rules-v${TRANSLITERATION_VERSION}`;
 
 /** Rules version of a stored provider label ("builtin-rules-v2" → 2); 0 when unknown. */
@@ -257,3 +284,28 @@ export function providerVersion(provider: string | null | undefined): number {
   return m ? Number(m[1]) : 0;
 }
 export { capitalize };
+
+type Spelled = { full_name: string; source: string };
+/**
+ * Learn word spellings from names where one language was written by a person (typed or corrected)
+ * and the other is its counterpart: "Shantabai Patil" ⇄ "शांताबाई पाटील" teaches shantabai ⇄ शांताबाई.
+ * Only names with the same number of words are used (so words pair up), and the hand-written side wins.
+ */
+export function learnFromNames(names: { en?: Spelled; mr?: Spelled }[]): { enToMr: Map<string, string>; mrToEn: Map<string, string> } {
+  const enToMr = new Map<string, string>();
+  const mrToEn = new Map<string, string>();
+  const byHand = (f?: Spelled) => f && (f.source === 'manual' || f.source === 'corrected');
+  for (const { en, mr } of names) {
+    if (!en || !mr || (!byHand(en) && !byHand(mr))) continue;
+    const ew = en.full_name.trim().split(/\s+/);
+    const mw = mr.full_name.trim().split(/\s+/);
+    if (ew.length !== mw.length) continue;
+    ew.forEach((e, i) => {
+      const m = mw[i]!;
+      if (!/^[A-Za-z]+$/.test(e) || !/^[ऀ-ॿ]+$/.test(m)) return;
+      if (byHand(mr)) enToMr.set(e.toLowerCase(), m);
+      if (byHand(en)) mrToEn.set(m, e.charAt(0).toUpperCase() + e.slice(1));
+    });
+  }
+  return { enToMr, mrToEn };
+}

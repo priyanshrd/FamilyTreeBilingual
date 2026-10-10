@@ -10,12 +10,13 @@ import { SearchBox } from '@/components/SearchBox';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { TreeCanvas } from '@/components/tree/TreeCanvas';
 import { Button } from '@/components/ui/Button';
+import { Emblem } from '@/components/ui/Emblem';
 import { SIDEBAR_RESERVE_CLASS } from '@/components/ui/Dialog';
 import { ErrorMessage, Loading } from '@/components/ui/Status';
 import type { FamilyModel } from '@/domain/family/familyModel';
 import { getText } from '@/domain/localized/localized';
 import { exportFileName, exportVisibleTree } from '@/export/exportView';
-import { familyViewLayout } from '@/graph/familyView';
+import { familyExplorerLayout } from '@/graph/familyView';
 import { layoutTree } from '@/graph/layout';
 import { neighbourhood } from '@/graph/projection';
 import { PeopleList } from '@/components/PeopleList';
@@ -25,7 +26,7 @@ import { useKinshipTerms } from '@/hooks/useKinshipTerms';
 import { RelationshipFinder } from '@/components/relationship/RelationshipFinder';
 import { deviceSettings } from '@/services/deviceSettings';
 import { fillMissingNames, refreshAutoNames, repairNamedPlaceholders } from '@/services/repositories/personRepo';
-import { transliterate } from '@/domain/language/transliterate';
+import { learnFromNames, setLearnedWords, transliterate } from '@/domain/language/transliterate';
 import { BirthdaysDialog, birthdaysOf } from '@/components/BirthdaysDialog';
 import { KinshipResolver } from '@/domain/kinship/resolve';
 import { labelRelationship } from '@/domain/kinship/terms';
@@ -83,6 +84,8 @@ export function WorkspacePage() {
   const setView = (v: View) => setPlace({ view: v });
   // Back (in the toolbar) is offered when this tab has an earlier place to return to
   const canGoBack = ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
+  // whose "+ family" is open, per family view (kept for this visit, so Back finds it as it was left)
+  const [expandedByFocus, setExpandedByFocus] = useState<Record<string, string[]>>({});
   const [highlight, setHighlight] = useState<Set<string> | null>(null);
   const terms = useKinshipTerms(familyId);
 
@@ -121,7 +124,20 @@ export function WorkspacePage() {
     };
   }, [model, photoUrls]);
 
-  const birthdays = useMemo(() => (model ? birthdaysOf(model) : []), [model]);
+  // the toolbar badge counts birthdays in the next 30 days; the list itself shows the whole year
+  const birthdays = useMemo(() => (model ? birthdaysOf(model, new Date(), 30) : []), [model]);
+
+  // Keyboard: with someone selected, Delete asks to delete them (the confirmation then takes Delete or Enter).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' || modal || !selectedId || !model?.persons.has(selectedId)) return;
+      if ((e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable]')) return;
+      e.preventDefault();
+      setModal({ kind: 'delete' });
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [modal, selectedId, model]);
 
   // The header stays put when a side panel opens; panels start just below it.
   const headerRef = useRef<HTMLElement>(null);
@@ -169,23 +185,42 @@ export function WorkspacePage() {
     }
   }
 
+  // Spellings the family typed or corrected teach the automatic spelling of every similar name.
+  useMemo(() => {
+    if (!model) return;
+    const names = [...model.persons.values()].flatMap((p) => [p.names, ...Object.values(p.otherNames).map((n) => n.forms)]);
+    const { enToMr, mrToEn } = learnFromNames(names.map((f) => ({ en: f.en, mr: f.mr })));
+    setLearnedWords(enToMr, mrToEn);
+  }, [model]);
+
   // Once per visit: tidy data entered before recent fixes (named placeholders, missing or outdated
   // automatic names). Never changes anything typed by hand.
   const backfilled = useRef(false);
+  const tidying = useRef(false);
   useEffect(() => {
-    if (!model || !familyId || backfilled.current || !deviceSettings.autoFill()) return;
+    if (!model || !familyId || tidying.current || !deviceSettings.autoFill()) return;
+    const first = !backfilled.current;
     backfilled.current = true;
+    tidying.current = true;
     const people = [...model.persons.values()];
     void (async () => {
-      const changed =
-        (await repairNamedPlaceholders(people)) +
-        (await fillMissingNames(familyId, people, 'mr', transliterate)) +
-        (await fillMissingNames(familyId, people, 'en', transliterate)) +
-        (await refreshAutoNames(people, transliterate));
+      let changed = 0;
+      if (first) {
+        changed += await repairNamedPlaceholders(people);
+        changed += await fillMissingNames(familyId, people, 'mr', transliterate);
+        changed += await fillMissingNames(familyId, people, 'en', transliterate);
+      }
+      // after every change too: a spelling corrected by hand updates the automatic spelling of
+      // similar names straight away (stops by itself: a second pass finds nothing to change)
+      changed += await refreshAutoNames(people, transliterate);
       if (changed) await refresh();
-    })().catch(() => {
-      backfilled.current = false;
-    });
+    })()
+      .catch(() => {
+        if (first) backfilled.current = false;
+      })
+      .finally(() => {
+        tidying.current = false;
+      });
   }, [model, familyId, refresh]);
 
   const lastId = familyId ? deviceSettings.lastPersonId(familyId) : null;
@@ -215,8 +250,18 @@ export function WorkspacePage() {
 
   const layout = useMemo(() => {
     if (!model || !focusId || view === 'list') return null;
-    return view === 'family' ? familyViewLayout(model.graph, focusId) : layoutTree(model.graph, visible);
-  }, [model, focusId, view, visible]);
+    return view === 'family' ? familyExplorerLayout(model.graph, focusId, expandedByFocus[focusId] ?? []) : layoutTree(model.graph, visible);
+  }, [model, focusId, view, visible, expandedByFocus]);
+
+  /** "+ family" on a box: show (or hide again) that person's family inside the current view. */
+  function toggleFamily(id: string) {
+    if (!focusId) return;
+    const opened = expandedByFocus[focusId] ?? [];
+    const closing = opened.includes(id);
+    setExpandedByFocus({ ...expandedByFocus, [focusId]: closing ? opened.filter((x) => x !== id) : [...opened, id] });
+    setSelectedId(id);
+    setCenterOn(`${id}#${Date.now()}`); // keep them in sight: glide to them (and any newly shown relatives)
+  }
 
   /**
    * Show a person's own family (the family view re-centred on them). Their earlier place stays in
@@ -277,8 +322,14 @@ export function WorkspacePage() {
 
   return (
     <div className="flex h-dvh flex-col bg-stone-50">
-      <header ref={headerRef} className="relative z-50 flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-4 py-2">
-        <h1 className="mr-auto text-lg font-semibold text-amber-900">{title}</h1>
+      <header
+        ref={headerRef}
+        className="relative z-50 flex flex-wrap items-center gap-2 border-b border-amber-900/10 bg-gradient-to-r from-[#fff7ea] via-white to-[#fff7ea] px-4 py-2 shadow-[0_1px_0_rgba(120,53,15,0.04)]"
+      >
+        <h1 className="mr-auto flex items-center gap-2.5 font-display text-xl font-bold tracking-tight text-[#7c2d12]">
+          <Emblem size={34} />
+          {title}
+        </h1>
         <div className="order-last w-full sm:order-none sm:w-auto">
           {model && model.persons.size > 0 && <SearchBox model={model} onPick={(id) => select(id, true)} />}
         </div>
@@ -311,16 +362,21 @@ export function WorkspacePage() {
 
         {model && model.persons.size > 0 && (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-stone-200 bg-white px-2 py-1.5 text-sm whitespace-nowrap sm:gap-1.5 sm:px-3">
-              <div role="group" aria-label={t('view.label')} className="inline-flex shrink-0 rounded-lg border border-stone-200 p-0.5 max-sm:flex max-sm:w-full">
+            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-amber-900/10 bg-white/80 px-2 py-1.5 text-sm whitespace-nowrap backdrop-blur sm:gap-1.5 sm:px-3">
+              <div role="group" aria-label={t('view.label')} className="inline-flex shrink-0 rounded-xl bg-stone-100 p-1 max-sm:flex max-sm:w-full">
                 {(['family', 'tree', 'list'] as const).map((v) => (
                   <button
                     key={v}
                     type="button"
                     aria-pressed={view === v}
                     onClick={() => setView(v)}
-                    className={`min-h-10 rounded-md px-3 max-sm:flex-1 max-sm:px-1 max-sm:leading-tight max-sm:whitespace-normal ${view === v ? 'bg-amber-800 text-white' : 'text-stone-700 hover:bg-stone-100'}`}
+                    className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-3 font-medium transition-colors max-sm:flex-1 max-sm:px-1 max-sm:leading-tight max-sm:whitespace-normal ${
+                      view === v ? 'bg-white text-[#7c2d12] shadow-sm ring-1 ring-amber-900/10' : 'text-stone-600 hover:text-stone-900'
+                    }`}
                   >
+                    <span aria-hidden className="max-sm:hidden">
+                      {{ family: '👪', tree: '🌳', list: '☰' }[v]}
+                    </span>
                     {t(`view.${v}`)}
                   </button>
                 ))}
@@ -396,6 +452,7 @@ export function WorkspacePage() {
                     viewKey={`${view}:${focusId}:${everyone}`}
                     onSelect={(id) => select(id)}
                     onOpenFamily={openFamily}
+                    onToggleFamily={toggleFamily}
                     photoUrl={photoUrl}
                     relations={relations}
                   />
@@ -426,8 +483,10 @@ export function WorkspacePage() {
             onDelete={() => setModal({ kind: 'delete' })}
             onBirthOrder={() => setModal({ kind: 'order' })}
             onRelationship={() => {
+              // with "me" set: how is this person related to me; otherwise: this person's relative — pick who
               const me = familyId ? deviceSettings.mePersonId(familyId) : null;
-              setModal({ kind: 'relationship', a: me && me !== selectedId ? me : null, b: selectedId });
+              if (me && me !== selectedId) setModal({ kind: 'relationship', a: me, b: selectedId });
+              else setModal({ kind: 'relationship', a: selectedId, b: null });
             }}
             meId={meId}
             onToggleMe={() => toggleMe(selectedId)}

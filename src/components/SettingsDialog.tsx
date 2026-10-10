@@ -32,8 +32,14 @@ export function SettingsDialog({ familyId, model, onClose, onChanged }: Props) {
     onError: (e) => setMessage(String((e as Error).message ?? e)),
   });
 
+  function saveSettings() {
+    deviceSettings.setEditorName(name);
+    deviceSettings.setAutoFill(autoFill);
+    onClose();
+  }
+
   return (
-    <Dialog title={t('settings.heading')} onClose={onClose}>
+    <Dialog title={t('settings.heading')} onClose={onClose} onEnter={saveSettings}>
       <div className="space-y-6">
         <div>
           <p className="mb-1 text-sm font-medium text-stone-700">{t('settings.language')}</p>
@@ -80,13 +86,7 @@ export function SettingsDialog({ familyId, model, onClose, onChanged }: Props) {
           <Button variant="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button
-            onClick={() => {
-              deviceSettings.setEditorName(name);
-              deviceSettings.setAutoFill(autoFill);
-              onClose();
-            }}
-          >
+          <Button onClick={saveSettings}>
             {t('common.save')}
           </Button>
         </div>

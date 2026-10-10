@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { LanguageToggle } from '@/components/LanguageToggle';
 
 /**
@@ -10,25 +10,55 @@ export const SIDEBAR_RESERVE_CLASS = 'sm:pr-[26rem]';
 /** Save / Cancel row of a form: stays visible at the bottom while the form scrolls (long forms on phones). */
 export const DIALOG_ACTIONS_CLASS = 'sticky bottom-0 z-10 -mx-4 -mb-4 mt-6 flex flex-wrap justify-end gap-2 border-t border-stone-200 bg-white px-4 py-3';
 
-type Props = { title: string; onClose: () => void; children: ReactNode; wide?: boolean };
+type Props = {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+  /** what Enter does in this form (usually Save); Enter in a notes box still starts a new line */
+  onEnter?: () => void;
+  /** extra keys that also do it, e.g. ['Delete'] in the delete confirmation */
+  enterKeys?: string[];
+};
 
 /**
  * Forms open in the right-hand sidebar (full screen on phones), never over the tree.
  * Esc closes. It sits above the person panel, so closing a form returns to that person.
  */
-export function Dialog({ title, onClose, children }: Props) {
+export function Dialog({ title, onClose, children, onEnter, enterKeys = [] }: Props) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
+  // the latest callbacks, so the listener below is set up once (re-running it would move the focus)
+  const latest = useRef({ onClose, onEnter, enterKeys });
+  useLayoutEffect(() => {
+    latest.current = { onClose, onEnter, enterKeys };
+  });
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button:not([data-close])')?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      const { onClose, onEnter, enterKeys } = latest.current;
+      if (e.key === 'Escape') return onClose();
+      if (!onEnter || e.defaultPrevented || e.shiftKey || e.isComposing) return;
+      const target = e.target as HTMLElement | null;
+      if (target && !ref.current?.contains(target) && target !== document.body) return;
+      const typing = target?.closest('input, textarea, select, [contenteditable]');
+      if (e.key === 'Enter') {
+        // a button or link handles Enter itself; a notes box gets a new line; a search box picks
+        if (target?.closest('button, a, textarea, [role="combobox"], [role="option"], [role="listbox"]')) return;
+        e.preventDefault();
+        onEnter();
+      } else if (enterKeys.includes(e.key) && !typing) {
+        e.preventDefault();
+        onEnter();
+      }
+    };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       prev?.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div
       ref={ref}

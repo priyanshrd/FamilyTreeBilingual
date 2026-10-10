@@ -11,7 +11,7 @@
 // flagged `more` for that badge.
 import type { GenealogyGraph, Lineage } from '@/domain/genealogy/graph';
 import { KIN_LINEAGES } from '@/domain/genealogy/graph';
-import { PERSON_H, PERSON_W, personNodeId, unionNodeId, type LaidOutEdge, type LaidOutNode, type TreeLayout } from './layout';
+import { layoutTree, PERSON_H, PERSON_W, personNodeId, unionNodeId, type LaidOutEdge, type LaidOutNode, type TreeLayout } from './layout';
 
 const GAP_X = 28;
 const STEP_X = PERSON_W + GAP_X;
@@ -172,4 +172,27 @@ function partnerEdge(personId: string, dotId: string): LaidOutEdge {
 
 function genderRank(g: string | undefined) {
   return g === 'male' ? 0 : g === 'female' ? 2 : 1;
+}
+
+/**
+ * The family view as people explore it: the person's own family (as in familyViewLayout), plus the
+ * immediate family — parents, husband/wife, children, brothers and sisters — of everyone whose
+ * "+ family" was opened, all drawn together as one tree (couples side by side, see layoutTree).
+ */
+export function familyExplorerLayout(graph: GenealogyGraph, focusId: string, expanded: Iterable<string> = []): FamilyViewLayout & { expanded: Set<string> } {
+  const shown = new Set(familyViewLayout(graph, focusId).nodes.filter((n) => n.kind === 'person').map((n) => n.id));
+  const opened = new Set<string>();
+  for (const id of expanded) {
+    if (!graph.has(id) || !shown.has(id)) continue;
+    opened.add(id);
+    for (const r of immediateFamily(graph, id)) shown.add(r);
+  }
+  const layout = layoutTree(graph, shown);
+  const more = new Set<string>();
+  for (const id of shown) if (id !== focusId && !opened.has(id) && immediateFamily(graph, id).some((r) => !shown.has(r))) more.add(id);
+  return { ...layout, more, expanded: opened };
+}
+
+function immediateFamily(graph: GenealogyGraph, id: string): string[] {
+  return [...graph.parents(id), ...graph.partners(id), ...graph.children(id), ...graph.siblings(id).map((s) => s.id)];
 }
