@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router';
+import { Navigate, useLocation } from 'react-router';
 import { useAuth } from '@/app/AuthProvider';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { Button } from '@/components/ui/Button';
@@ -8,13 +8,17 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { Emblem } from '@/components/ui/Emblem';
 
 export function LoginPage() {
+  const location = useLocation();
   const { t } = useI18n();
   const { session, signIn } = useAuth();
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (session) return <Navigate to="/" replace />;
+  if (session) {
+    const from = (location.state as { from?: string } | null)?.from;
+    return <Navigate to={from && from.startsWith('/') && !from.startsWith('//') ? from : '/'} replace />;
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();

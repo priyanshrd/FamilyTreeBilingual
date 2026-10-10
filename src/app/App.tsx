@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { Loading } from '@/components/ui/Status';
 import { I18nProvider, useI18n } from '@/i18n/I18nProvider';
 import { LoginPage } from '@/pages/LoginPage';
@@ -14,8 +14,10 @@ const queryClient = new QueryClient({
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth();
+  // keep where they were going (e.g. a shared link to a view): the login page returns them there
+  const location = useLocation();
   if (loading) return <Loading />;
-  if (!session) return <Navigate to="/login" replace />;
+  if (!session) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   return <>{children}</>;
 }
 

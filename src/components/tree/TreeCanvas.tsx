@@ -1,5 +1,7 @@
 import {
   Background,
+  BaseEdge,
+  type EdgeProps,
   Controls,
   Handle,
   Position,
@@ -122,16 +124,48 @@ const PersonNode = memo(function PersonNode({ data }: NodeProps<Node<PersonData>
   );
 });
 
-/** The dot where a couple's line meets the line down to their children. */
-const UnionNode = memo(function UnionNode({ data }: NodeProps<Node<{ divorced?: boolean }>>) {
+/**
+ * The dot where a couple's line meets the line down to their children. It can be dragged on its own
+ * (the children come along, the spouses stay): a finger-sized invisible grab area surrounds it.
+ */
+const UnionNode = memo(function UnionNode({ data }: NodeProps<Node<{ divorced?: boolean; hint?: string }>>) {
   return (
-    <div className={`size-[10px] rounded-full border-2 bg-[#fffaf2] ${data?.divorced ? 'border-stone-400' : 'border-[#8a6a48]'}`}>
+    <div className="group relative size-[10px] cursor-grab active:cursor-grabbing" title={data?.hint}>
+      <span aria-hidden className="absolute -inset-[13px] rounded-full group-hover:bg-amber-600/15" />
+      <span
+        className={`absolute inset-0 rounded-full border-2 bg-[#fffaf2] transition-transform group-hover:scale-150 ${data?.divorced ? 'border-stone-400' : 'border-[#8a6a48]'}`}
+      />
       <Handles />
     </div>
   );
 });
 
 const nodeTypes = { person: PersonNode, union: UnionNode };
+
+/**
+ * Line from parents to a child: down to the family's own bar (its lane, so bars of different families
+ * never lie on top of each other), along it, and down into the child. Rounded corners.
+ */
+function FamilyEdge({ sourceX, sourceY, targetX, targetY, style, data }: EdgeProps<Edge<{ bus?: number }>>) {
+  const busY = Math.max(sourceY + 4, Math.min(sourceY + (data?.bus ?? (targetY - sourceY) / 2), targetY - 10));
+  const dx = targetX - sourceX;
+  let d: string;
+  if (Math.abs(dx) < 1) d = `M ${sourceX} ${sourceY} V ${targetY}`;
+  else {
+    const dir = Math.sign(dx);
+    const r = Math.max(0, Math.min(10, Math.abs(dx) / 2, busY - sourceY, targetY - busY));
+    d = [
+      `M ${sourceX} ${sourceY}`,
+      `V ${busY - r}`,
+      `Q ${sourceX} ${busY} ${sourceX + dir * r} ${busY}`,
+      `H ${targetX - dir * r}`,
+      `Q ${targetX} ${busY} ${targetX} ${busY + r}`,
+      `V ${targetY}`,
+    ].join(' ');
+  }
+  return <BaseEdge path={d} style={style} />;
+}
+const edgeTypes = { family: FamilyEdge };
 
 // Edge appearance is UI metadata derived from relationship type; nothing here is stored.
 const LINE = '#8a6a48'; // warm brown, like ink on old paper
@@ -194,7 +228,15 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
   const toNode = useCallback(
     (n: TreeLayout['nodes'][number], position?: { x: number; y: number }): Node => {
       if (n.kind === 'union') {
-        return { id: `u:${n.id}`, type: 'union', position: position ?? { x: n.x, y: n.y }, data: { divorced: n.divorced }, draggable: false, selectable: false };
+        return {
+          id: `u:${n.id}`,
+          type: 'union',
+          position: position ?? { x: n.x, y: n.y },
+          data: { divorced: n.divorced, hint: t('tree.dotHint') },
+          draggable: true,
+          selectable: false,
+          zIndex: 2,
+        };
       }
       const p = model.persons.get(n.id);
       const name = displayName(p, lang);
@@ -296,8 +338,8 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         target: e.target,
         sourceHandle: e.sourceHandle ?? 'b-s',
         targetHandle: e.targetHandle ?? 't-t',
-        type: e.kind === 'partner' ? 'straight' : 'smoothstep',
-        pathOptions: e.kind === 'partner' ? undefined : { borderRadius: 14 },
+        type: e.kind === 'partner' ? 'straight' : 'family',
+        data: { bus: e.bus },
         style: hot ? { ...edgeStyle(e), stroke: '#0284c7', strokeWidth: 3 } : edgeStyle(e),
         zIndex: hot ? 1 : 0,
         selectable: false,
@@ -370,9 +412,11 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
   useEffect(() => {
     if (!centerOn) return;
     // "id#stamp": the same person can be asked for again (e.g. after opening their family)
-    const id = centerOn.split('#')[0]!;
+    const [id, mode] = centerOn.split('#') as [string, string | undefined];
+    // "id#keep#stamp": glide without changing the zoom (opening a family in place)
+    const zoom = mode === 'keep' ? flow.getZoom() : Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale());
     // wait a frame so a just-changed layout is drawn before moving to it
-    requestAnimationFrame(() => focus(id, Math.max(flow.getZoom(), (isPhone() ? PHONE_FOCUS_ZOOM : FOCUS_ZOOM) * textScale())));
+    requestAnimationFrame(() => focus(id, zoom));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-centre only when asked to
   }, [centerOn]);
 
@@ -433,6 +477,7 @@ function Canvas({ model, layout, selectedId, highlight, centerOn, focusId, viewK
         }}
         onMoveEnd={(_, viewport) => viewMemory.viewports.set(viewKey, viewport)}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodeClick={(event, node) => {
           if (node.type !== 'person') return;
           const id = node.id.slice(2);

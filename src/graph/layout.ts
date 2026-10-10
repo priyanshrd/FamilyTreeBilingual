@@ -10,6 +10,11 @@ export const PERSON_H = 88;
 const UNION_SIZE = 10;
 /** space between spouses in a couple unit (holds the family dot) */
 const COUPLE_GAP = 44;
+/** space between units side by side */
+const UNIT_GAP = 56;
+/** the bars over children: first one this far below the parents' row, others in lanes below it */
+const BUS_FIRST = 34;
+const BUS_LANE = 12;
 
 export type LaidOutNode =
   | { kind: 'person'; id: string; x: number; y: number; width: number; height: number }
@@ -26,6 +31,8 @@ export type LaidOutEdge = {
   /** which side of the boxes the line attaches to (default: bottom of source → top of target) */
   sourceHandle?: 'b-s' | 'l-s' | 'r-s';
   targetHandle?: 't-t' | 'l-t' | 'r-t';
+  /** child lines: how far below the line's start the bar over the children runs (its own lane) */
+  bus?: number;
 };
 
 export type TreeLayout = { nodes: LaidOutNode[]; edges: LaidOutEdge[]; width: number; height: number };
@@ -58,7 +65,7 @@ export function layoutTree(graph: GenealogyGraph, visible: Set<string>): TreeLay
 
   // 2. dagre places the units, parents' unit above each child's unit
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: 'TB', nodesep: 56, ranksep: 84, marginx: 24, marginy: 24 });
+  g.setGraph({ rankdir: 'TB', nodesep: UNIT_GAP, ranksep: 96, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
   units.forEach((m, i) => g.setNode(`k${i}`, { width: m.length * PERSON_W + (m.length - 1) * COUPLE_GAP, height: PERSON_H }));
   for (const id of visible) {
@@ -70,36 +77,55 @@ export function layoutTree(graph: GenealogyGraph, visible: Set<string>): TreeLay
   }
   dagre.layout(g);
 
-  // Place people inside their unit, top generation first. In a couple, each spouse stands on the side
-  // facing their own parents (and so their brothers and sisters): lines from the parents then do not
-  // cross over the husband or wife.
+  // Order and place each generation, top first. dagre only avoids crossings, so on its own it can put
+  // someone between a married couple and that couple's brothers and sisters. Here every unit stands
+  // under its own parents (a couple joining two families stands between them), overlaps are then
+  // pushed apart as little as possible, and in a couple each spouse faces their own family.
   const nodes: LaidOutNode[] = [];
   const at = new Map<string, { x: number; y: number }>();
   const centreOf = (ids: string[]) => {
     const xs = ids.map((p) => at.get(p)).filter(Boolean).map((p) => p!.x + PERSON_W / 2);
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   };
-  const order = units.map((_, i) => i).sort((a, b) => g.node(`k${a}`).y - g.node(`k${b}`).y);
-  for (const i of order) {
-    const n = g.node(`k${i}`);
-    let members = units[i]!;
-    if (members.length === 2) {
-      const left = n.x - n.width / 2 + PERSON_W / 2;
-      const right = left + PERSON_W + COUPLE_GAP;
-      const cost = (ids: string[]) =>
-        ids.reduce((sum, id, slot) => {
-          const p = centreOf(graph.parents(id).filter((x) => visible.has(x)));
-          return sum + (p == null ? 0 : Math.abs((slot === 0 ? left : right) - p));
-        }, 0);
-      const flipped = [members[1]!, members[0]!];
-      if (cost(flipped) < cost(members) - 1) members = flipped;
-    }
-    let x = n.x - n.width / 2;
-    for (const id of members) {
-      at.set(id, { x, y: n.y - n.height / 2 });
-      nodes.push({ kind: 'person', id, x, y: n.y - n.height / 2, width: PERSON_W, height: PERSON_H });
-      x += PERSON_W + COUPLE_GAP;
-    }
+  const parentsCentre = (id: string) => centreOf(graph.parents(id).filter((x) => visible.has(x)));
+  const ranks = new Map<number, number[]>();
+  units.forEach((_, i) => {
+    const y = Math.round(g.node(`k${i}`).y);
+    ranks.set(y, [...(ranks.get(y) ?? []), i]);
+  });
+  for (const [, inRank] of [...ranks].sort((a, b) => a[0] - b[0])) {
+    const items = inRank.map((i) => {
+      const n = g.node(`k${i}`);
+      const keys = units[i]!.map(parentsCentre).filter((k): k is number => k != null);
+      const key = keys.length ? keys.reduce((a, b) => a + b, 0) / keys.length : n.x;
+      return { i, key, dagreX: n.x, width: n.width, y: n.y - n.height / 2 };
+    });
+    items.sort((p, q) => p.key - q.key || p.dagreX - q.dagreX);
+    const centres = spreadOut(
+      items.map((it) => it.key),
+      items.map((it) => it.width),
+      UNIT_GAP,
+    );
+    items.forEach((it, k) => {
+      let members = units[it.i]!;
+      const leftEdge = centres[k]! - it.width / 2;
+      if (members.length === 2) {
+        const slot = (s: number) => leftEdge + PERSON_W / 2 + s * (PERSON_W + COUPLE_GAP);
+        const cost = (ids: string[]) =>
+          ids.reduce((sum, id, s) => {
+            const p = parentsCentre(id);
+            return sum + (p == null ? 0 : Math.abs(slot(s) - p));
+          }, 0);
+        const flipped = [members[1]!, members[0]!];
+        if (cost(flipped) < cost(members) - 1) members = flipped;
+      }
+      let x = leftEdge;
+      for (const id of members) {
+        at.set(id, { x, y: it.y });
+        nodes.push({ kind: 'person', id, x, y: it.y, width: PERSON_W, height: PERSON_H });
+        x += PERSON_W + COUPLE_GAP;
+      }
+    });
   }
 
   // 3. family dots and lines
@@ -128,7 +154,7 @@ export function layoutTree(graph: GenealogyGraph, visible: Set<string>): TreeLay
     } else {
       // one parent, or spouses not side by side: the dot sits just below them
       const xs = partners.map((p) => at.get(p)!.x + PERSON_W / 2);
-      const y = Math.max(...partners.map((p) => at.get(p)!.y)) + PERSON_H + 14;
+      const y = Math.max(...partners.map((p) => at.get(p)!.y)) + PERSON_H + 12;
       nodes.push({ kind: 'union', id: u.id, x: (Math.min(...xs) + Math.max(...xs)) / 2 - UNION_SIZE / 2, y, width: UNION_SIZE, height: UNION_SIZE, divorced });
       for (const p of partners) edges.push({ id: `${uid}<${p}`, source: personNodeId(p), target: uid, kind: 'partner', lineage: 'biological', ended });
     }
@@ -147,6 +173,7 @@ export function layoutTree(graph: GenealogyGraph, visible: Set<string>): TreeLay
     }
   }
 
+  assignBusLanes(nodes, edges);
   const label = g.graph();
   return { nodes, edges, width: label.width ?? 0, height: label.height ?? 0 };
 }
@@ -175,4 +202,62 @@ function orderUnit(members: string[], spouses: Map<string, Set<string>>, graph: 
     order.splice(order.indexOf(partner) + 1, 0, m);
   }
   return order;
+}
+
+/**
+ * Centres for boxes in one row: each as close as possible to where it wants to be (in this order),
+ * without overlapping. Neighbours that would overlap are merged into a block centred on their wishes.
+ */
+export function spreadOut(wanted: number[], widths: number[], gap: number): number[] {
+  type Block = { first: number; last: number; width: number; offsets: number[]; left: number };
+  const blocks: Block[] = [];
+  const bestLeft = (b: Block) => b.offsets.reduce((sum, o, k) => sum + (wanted[b.first + k]! - o), 0) / b.offsets.length;
+  wanted.forEach((_, i) => {
+    let b: Block = { first: i, last: i, width: widths[i]!, offsets: [widths[i]! / 2], left: 0 };
+    b.left = bestLeft(b);
+    while (blocks.length) {
+      const prev = blocks[blocks.length - 1]!;
+      if (prev.left + prev.width + gap <= b.left) break;
+      blocks.pop();
+      const shift = prev.width + gap;
+      b = { first: prev.first, last: b.last, width: shift + b.width, offsets: [...prev.offsets, ...b.offsets.map((o) => o + shift)], left: 0 };
+      b.left = bestLeft(b);
+    }
+    blocks.push(b);
+  });
+  return blocks.flatMap((b) => b.offsets.map((o) => b.left + o));
+}
+
+/**
+ * Lines may cross, but must never lie on top of each other: every family's bar over its children
+ * gets its own height ("lane") wherever it would share a stretch with another family's bar from the
+ * same row of parents.
+ */
+function assignBusLanes(nodes: LaidOutNode[], edges: LaidOutEdge[]) {
+  const byId = new Map(nodes.map((n) => [n.kind === 'union' ? unionNodeId(n.id) : personNodeId(n.id), n] as const));
+  const families = new Map<string, LaidOutEdge[]>();
+  for (const e of edges) if (e.kind === 'child') families.set(e.source, [...(families.get(e.source) ?? []), e]);
+  type Bar = { source: string; startY: number; rowBottom: number; left: number; right: number };
+  const bars: Bar[] = [];
+  for (const [source, lines] of families) {
+    const s = byId.get(source);
+    if (!s) continue;
+    const xs = [s.x + s.width / 2, ...lines.map((e) => byId.get(e.target)).filter(Boolean).map((t) => t!.x + t!.width / 2)];
+    // the row of parents this family hangs from: its partners' row (a dot sits on or just below it)
+    const rowTop = s.kind === 'person' ? s.y : nodes.find((n) => n.kind === 'person' && n.y <= s.y && s.y <= n.y + PERSON_H + 20)?.y ?? s.y;
+    bars.push({ source, startY: s.y + s.height, rowBottom: rowTop + PERSON_H, left: Math.min(...xs), right: Math.max(...xs) });
+  }
+  const rows = new Map<number, Bar[]>();
+  for (const b of bars) rows.set(Math.round(b.rowBottom), [...(rows.get(Math.round(b.rowBottom)) ?? []), b]);
+  for (const [, row] of rows) {
+    row.sort((a, b) => a.left - b.left || a.right - b.right);
+    const laneEnds: number[] = [];
+    for (const b of row) {
+      let lane = laneEnds.findIndex((end) => end + 10 < b.left);
+      if (lane === -1) lane = laneEnds.push(b.right) - 1;
+      else laneEnds[lane] = b.right;
+      const busY = b.rowBottom + BUS_FIRST + lane * BUS_LANE;
+      for (const e of families.get(b.source)!) e.bus = Math.max(8, busY - b.startY);
+    }
+  }
 }

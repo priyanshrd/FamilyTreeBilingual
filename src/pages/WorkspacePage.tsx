@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Emblem } from '@/components/ui/Emblem';
 import { SIDEBAR_RESERVE_CLASS } from '@/components/ui/Dialog';
 import { ErrorMessage, Loading } from '@/components/ui/Status';
-import type { FamilyModel } from '@/domain/family/familyModel';
+import { displayName, type FamilyModel } from '@/domain/family/familyModel';
 import { getText } from '@/domain/localized/localized';
 import { exportFileName, exportVisibleTree } from '@/export/exportView';
 import { familyExplorerLayout } from '@/graph/familyView';
@@ -68,7 +68,9 @@ export function WorkspacePage() {
   const navigate = useNavigate();
   const view: View = (['family', 'tree', 'list'] as const).find((v) => v === params.get('view')) ?? 'family';
   const focus = params.get('person');
-  const setPlace = (next: { view?: View; person?: string | null }, push = false) =>
+  // whose "+ family" is open in this family view (also in the address: a shared link shows it too)
+  const opened = useMemo(() => (params.get('open') ?? '').split(',').filter(Boolean), [params]);
+  const setPlace = (next: { view?: View; person?: string | null; open?: string[] }, push = false) =>
     setParams(
       (p) => {
         const q = new URLSearchParams(p);
@@ -76,6 +78,12 @@ export function WorkspacePage() {
         if (next.person !== undefined) {
           if (next.person) q.set('person', next.person);
           else q.delete('person');
+          // another person's family starts closed
+          if (next.person !== p.get('person') && next.open === undefined) q.delete('open');
+        }
+        if (next.open !== undefined) {
+          if (next.open.length) q.set('open', next.open.join(','));
+          else q.delete('open');
         }
         return q;
       },
@@ -84,8 +92,6 @@ export function WorkspacePage() {
   const setView = (v: View) => setPlace({ view: v });
   // Back (in the toolbar) is offered when this tab has an earlier place to return to
   const canGoBack = ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
-  // whose "+ family" is open, per family view (kept for this visit, so Back finds it as it was left)
-  const [expandedByFocus, setExpandedByFocus] = useState<Record<string, string[]>>({});
   const [highlight, setHighlight] = useState<Set<string> | null>(null);
   const terms = useKinshipTerms(familyId);
 
@@ -157,7 +163,7 @@ export function WorkspacePage() {
   // Undo: the last changes made in this tab; a short message offers Undo after each save.
   const undoList = useUndoList();
   const [undoing, setUndoing] = useState(false);
-  const [toast, setToast] = useState<{ kind: 'saved' | 'done'; entry: UndoEntry } | { kind: 'failed'; reason: string } | null>(null);
+  const [toast, setToast] = useState<{ kind: 'saved' | 'done'; entry: UndoEntry } | { kind: 'failed'; reason: string } | { kind: 'info'; text: string } | null>(null);
   const undoText = (e: UndoEntry) => t(`undo.${e.kind}`, { name: e.name });
   const lastUndoCount = useRef(undoList.length);
   useEffect(() => {
@@ -250,17 +256,41 @@ export function WorkspacePage() {
 
   const layout = useMemo(() => {
     if (!model || !focusId || view === 'list') return null;
-    return view === 'family' ? familyExplorerLayout(model.graph, focusId, expandedByFocus[focusId] ?? []) : layoutTree(model.graph, visible);
-  }, [model, focusId, view, visible, expandedByFocus]);
+    return view === 'family' ? familyExplorerLayout(model.graph, focusId, opened) : layoutTree(model.graph, visible);
+  }, [model, focusId, view, visible, opened]);
+
+  /**
+   * Share a link to exactly this view (whose family, which families are opened, or the whole tree /
+   * list). Phones get their share sheet (WhatsApp, messages…); computers copy the link. Whoever opens
+   * it is asked for the family password first and then lands on this view.
+   */
+  async function shareView() {
+    const url = new URL(window.location.pathname, window.location.origin);
+    url.searchParams.set('view', view);
+    if (focusId) url.searchParams.set('person', focusId);
+    if (view === 'family' && opened.length) url.searchParams.set('open', opened.join(','));
+    const who = focusId ? displayName(model?.persons.get(focusId), lang).text : '';
+    const text = view === 'family' && who ? t('share.text', { name: who }) : t('share.textTree');
+    try {
+      if (navigator.share && window.matchMedia('(pointer: coarse)').matches) {
+        await navigator.share({ title: title, text, url: url.toString() });
+        return;
+      }
+      await navigator.clipboard.writeText(url.toString());
+      setToast({ kind: 'info', text: t('share.copied') });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return; // closed the share sheet
+      window.prompt(t('share.copyThis'), url.toString());
+    }
+  }
 
   /** "+ family" on a box: show (or hide again) that person's family inside the current view. */
   function toggleFamily(id: string) {
     if (!focusId) return;
-    const opened = expandedByFocus[focusId] ?? [];
     const closing = opened.includes(id);
-    setExpandedByFocus({ ...expandedByFocus, [focusId]: closing ? opened.filter((x) => x !== id) : [...opened, id] });
+    setPlace({ open: closing ? opened.filter((x) => x !== id) : [...opened, id] });
     setSelectedId(id);
-    setCenterOn(`${id}#${Date.now()}`); // keep them in sight: glide to them (and any newly shown relatives)
+    setCenterOn(`${id}#keep#${Date.now()}`); // keep them in sight: glide to them, zoom unchanged
   }
 
   /**
@@ -412,6 +442,12 @@ export function WorkspacePage() {
                   )}
                 </span>
                 <span className={ICON_LABEL}>{t('birthdays.button')}</span>
+              </button>
+              <button type="button" onClick={() => void shareView()} title={t('share.help')} className={TOOL_ICON}>
+                <span aria-hidden className={ICON}>
+                  🔗
+                </span>
+                <span className={ICON_LABEL}>{t('share.button')}</span>
               </button>
               <button type="button" onClick={() => setModal({ kind: 'first' })} title={t('toolbar.addPersonHelp')} className={TOOL}>
                 + {t('toolbar.addPerson')}
@@ -567,7 +603,7 @@ export function WorkspacePage() {
           }`}
         >
           <span className="truncate">
-            {toast.kind === 'failed' ? t('undo.failed', { reason: toast.reason }) : t(`undo.${toast.kind}`, { what: undoText(toast.entry) })}
+            {toast.kind === 'info' ? toast.text : toast.kind === 'failed' ? t('undo.failed', { reason: toast.reason }) : t(`undo.${toast.kind}`, { what: undoText(toast.entry) })}
           </span>
           {toast.kind === 'saved' && undoList.at(-1)?.id === toast.entry.id && (
             <button type="button" onClick={() => void undo()} disabled={undoing} className="min-h-10 shrink-0 rounded-lg px-3 font-semibold text-amber-300 hover:bg-white/10">

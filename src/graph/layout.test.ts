@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { fixtureFamily } from '@/domain/testing/familyBuilder';
-import { layoutTree, personNodeId } from './layout';
+import { FamilyBuilder, fixtureFamily } from '@/domain/testing/familyBuilder';
+import { layoutTree, personNodeId, spreadOut } from './layout';
 import { neighbourhood } from './projection';
 
 const g = fixtureFamily();
@@ -63,5 +63,62 @@ describe('tree layout', () => {
     expect([...near].sort()).toEqual(['by', 'dau', 'f', 'm', 'me', 'son', 'wife'].filter((x) => x !== 'by').sort());
     const small = layoutTree(g, near);
     expect(small.nodes.filter((n) => n.kind === 'person')).toHaveLength(near.size);
+  });
+});
+
+describe('order within a generation, and lines that never lie on top of each other', () => {
+  // the reported family: Rajashree (Rajiv's sister) was drawn between Deepali and Deepali's brother
+  const b = new FamilyBuilder();
+  for (const [id, g] of [
+    ['balgonda', 'male'], ['indumati', 'female'], ['tatya', 'male'], ['ratnabai', 'female'], ['tavanappa', 'male'],
+    ['pushpakala', 'female'], ['dadgonda', 'male'], ['ellappa', 'male'], ['kamala', 'female'],
+    ['rupali', 'female'], ['rajendra', 'male'], ['deepali', 'female'], ['rajashree', 'female'], ['rajiv', 'male'], ['sanjeev', 'male'],
+    ['priyansh', 'male'],
+  ] as const) b.person(id, g);
+  b.children(b.union('balgonda', 'indumati'), ['pushpakala']);
+  b.children(b.union('tatya', 'ratnabai'), ['dadgonda']);
+  b.children(b.union('tavanappa'), ['ellappa']);
+  b.children(b.union('dadgonda', 'pushpakala'), ['rupali', 'rajendra', 'deepali']);
+  b.children(b.union('ellappa', 'kamala'), ['rajashree', 'rajiv', 'sanjeev']);
+  b.children(b.union('rajiv', 'deepali'), ['priyansh']);
+  const tree = b.build();
+  const l = layoutTree(tree, new Set(tree.allPeople().map((p) => p.id)));
+  const x = (id: string) => l.nodes.find((n) => n.kind === 'person' && n.id === id)!.x;
+
+  it("keeps brothers and sisters together, the couple between the two families (reported case)", () => {
+    // whichever way round the families are drawn: each spouse's brothers and sisters on their side
+    const side = Math.sign(x('rajiv') - x('deepali'));
+    for (const sib of ['rajashree', 'sanjeev']) expect(Math.sign(x(sib) - x('rajiv'))).toBe(side);
+    for (const sib of ['rupali', 'rajendra']) expect(Math.sign(x(sib) - x('deepali'))).toBe(-side);
+  });
+
+  it('never lets two families\' bars over their children lie on top of each other', () => {
+    for (const layout of [l, layoutTree(g, new Set(g.allPeople().map((p) => p.id)))]) {
+      const nodeAt = new Map(layout.nodes.map((n) => [n.kind === 'union' ? `u:${n.id}` : `p:${n.id}`, n] as const));
+      const bars = new Map<string, { y: number; left: number; right: number }>();
+      for (const e of layout.edges.filter((x) => x.kind === 'child')) {
+        const s = nodeAt.get(e.source)!;
+        const t = nodeAt.get(e.target)!;
+        expect(e.bus, `${e.id} has a bar height`).toBeGreaterThan(0);
+        const y = s.y + s.height + e.bus!;
+        expect(y, `${e.id}: bar above the child`).toBeLessThan(t.y);
+        const xs = [s.x + s.width / 2, t.x + t.width / 2];
+        const bar = bars.get(e.source) ?? { y, left: Infinity, right: -Infinity };
+        bars.set(e.source, { y, left: Math.min(bar.left, ...xs), right: Math.max(bar.right, ...xs) });
+      }
+      const list = [...bars.entries()];
+      for (const [i, [ida, a]] of list.entries())
+        for (const [idb, bb] of list.slice(i + 1)) {
+          const shareStretch = a.left < bb.right - 1 && bb.left < a.right - 1;
+          if (shareStretch) expect(Math.abs(a.y - bb.y), `${ida} and ${idb} overlap`).toBeGreaterThan(4);
+        }
+    }
+  });
+});
+
+describe('spreadOut', () => {
+  it('keeps boxes where they want to be when there is room, and pushes overlapping ones apart evenly', () => {
+    expect(spreadOut([0, 500], [100, 100], 20)).toEqual([0, 500]);
+    expect(spreadOut([100, 100], [100, 100], 20)).toEqual([40, 160]);
   });
 });
